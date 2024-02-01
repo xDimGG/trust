@@ -1,0 +1,206 @@
+extern crate proc_macro;
+
+use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
+use quote::{format_ident, quote};
+use syn::{parse_macro_input, ItemEnum, Fields, Type, Field};
+
+use std::clone::Clone;
+
+#[proc_macro_attribute]
+pub fn message_read_write(_: TokenStream, input: TokenStream) -> TokenStream {
+    let reader = TokenStream2::from(message_reader(input.clone()));
+    let writer = TokenStream2::from(message_writer(input.clone()));
+
+    let input = parse_macro_input!(input as ItemEnum);
+
+    let mut structs = Vec::new();
+    let mut variants = Vec::new();
+
+    for variant in input.variants {
+        if let Fields::Named(fields) = variant.fields {
+            let fields = fields.named.iter();
+            let name = variant.ident;
+            structs.push(quote! {
+                #[derive(Debug)]
+                pub struct #name {
+                    #(#fields),*
+                }
+            });
+            variants.push(quote! { #name(#name) })
+        } else {
+            variants.push(quote! { #variant })
+        }
+    }
+
+    TokenStream::from(quote! {
+        #(#structs)*
+        pub enum Message<'a> {
+            #(#variants),*
+        }
+        #reader
+        #writer
+    })
+}
+
+fn message_reader(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ItemEnum);
+    let mut cases = Vec::new();
+
+    for variant in input.variants {
+        let name = variant.ident;
+        if name.to_string() == "Unknown" {
+            continue;
+        }
+
+        let doc = variant.attrs.first().unwrap().tokens.to_string();
+        if !doc.contains("->") {
+            continue;
+        }
+    
+        let code = u8::from_str_radix(&doc[5..7], 16).unwrap();
+
+        match variant.fields {
+            Fields::Named(fields) => {
+                let mut field_names = Vec::new();
+                let mut field_readers = Vec::new();
+
+                for field in fields.named {
+                    field_readers.push(read_type(&field));
+                    field_names.push(field.ident.unwrap())
+                }
+
+                cases.push(quote! { #code => Self::#name(#name { #(#field_names: #field_readers),* }) })
+            },
+            Fields::Unnamed(fields) => {
+                let mut field_readers = Vec::new();
+
+                for field in fields.unnamed {
+                    field_readers.push(read_type(&field))
+                }
+
+                cases.push(quote! { #code => Self::#name(#(#field_readers),*) })
+            },
+            Fields::Unit => cases.push(quote! { #code => Self::#name }),
+        };
+    }
+
+    TokenStream::from(quote! {
+        impl<'a> From<&'a [u8]> for Message<'a>  {
+            fn from(buf: &'a [u8]) -> Self {
+                let mut mr = MessageReader::new(buf, 0);
+
+                match mr.read_byte() {
+                    #(#cases),*,
+                    code => Self::Unknown(code, &buf[1..]),
+                }
+            }
+        }
+    })
+}
+
+fn read_type(field: &Field) -> TokenStream2 {
+    match &field.ty {
+        Type::Path(ty) => {
+            match ty.path.segments.first().unwrap().ident.to_string().as_str() {
+                "u8" => quote! { mr.read_byte() },
+                "u16" => quote! { mr.read_u16() },
+                "i32" => quote! { mr.read_i32() },
+                "String" => quote! { mr.read_string() },
+                "RGB" => quote! { mr.read_rgb() },
+                ty => quote! { compile_error!("Unsupported type: {}", #ty) },
+            }
+        },
+        Type::Array(ty) => {
+            if let Type::Path(at) = &*ty.elem {
+                let len = &ty.len;
+                match at.path.segments.first().unwrap().ident.to_string().as_str() {
+                    "u16" => quote! { {
+                        let mut buf = [0u16; #len];
+                        for num in &mut buf {
+                            *num = u16::from_le_bytes(mr.take(2).try_into().unwrap())
+                        }
+                        buf
+                    } },
+                    ty => quote! { compile_error!("Unsupported array type: {}", #ty) },
+                }
+            } else {
+                quote! { compile_error!("Array element is not TypePath") }
+            }
+        },
+        _ => quote! { compile_error!("Field is not TypePath") },
+    }
+}
+
+fn message_writer(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ItemEnum);
+    let mut cases = Vec::new();
+
+    for variant in input.variants {
+        let name = variant.ident;
+        if name.to_string() == "Unknown" {
+            continue;
+        }
+
+        let doc = variant.attrs.first().unwrap().tokens.to_string();
+        if !doc.contains("<-") {
+            continue;
+        }
+    
+        let code = u8::from_str_radix(&doc[5..7], 16).unwrap();
+
+        match variant.fields {
+            Fields::Named(fields) => {
+                let mut field_readers = Vec::new();
+
+                for field in fields.named {
+                    let name = field.ident.as_ref().unwrap();
+                    field_readers.push(write_type(&field, quote! { data.#name }))
+                }
+
+                cases.push(quote! { Message::#name(data) => Ok(MessageWriter::new(#code)#(#field_readers)*.finalize()) })
+            },
+            Fields::Unnamed(fields) => {
+                let mut field_names = Vec::new();
+                let mut field_readers = Vec::new();
+
+                for (i, field) in fields.unnamed.iter().enumerate() {
+                    let i = format_ident!("field{}", i);
+                    field_readers.push(write_type(field, quote! { #i }));
+                    field_names.push(quote! { #i })
+                }
+
+                cases.push(quote! { Message::#name(#(#field_names),*) => Ok(MessageWriter::new(#code)#(#field_readers)*.finalize()) })
+            },
+            Fields::Unit => cases.push(quote! { Message::#name => Ok(MessageWriter::new(#code).finalize()) }),
+        };
+    }
+
+    TokenStream::from(quote! {
+        impl<'a> TryFrom<Message<'a>> for Vec<u8> {
+            type Error = &'static str;
+
+            fn try_from(msg: Message) -> Result<Self, Self::Error> {
+                match msg {
+                    #(#cases),*,
+                    Message::Unknown(code, buf) => Ok(MessageWriter::new(code).write_bytes(buf).finalize()),
+                    _ => Err("Unserializable message. Consider using Message::Unknown"),
+                }
+            }
+        }
+    })
+}
+
+fn write_type(field: &Field, name: TokenStream2) -> TokenStream2 {
+    if let Type::Path(ty) = &field.ty {
+        match ty.path.segments.first().unwrap().ident.to_string().as_str() {
+            "u8" => quote! { .write_byte(#name) },
+            "u16" => quote! { .write_u16(#name) },
+            "u32" => quote! { .write_u32(#name) },
+            "String" => quote! { .write_string(#name) },
+            ty => quote! { compile_error!("Unknown type: {}", #ty) },
+        }
+    } else {
+        quote! { compile_error!("Field is not TypePath") }
+    }
+}
