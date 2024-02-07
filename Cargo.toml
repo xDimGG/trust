@@ -2,10 +2,11 @@
 name = "trust"
 version = "0.1.0"
 authors = ["Dim"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "0.2", features = ["full"] }
-proc_macros = { path = "src/proc_macros" }
+tokio = { version = "1.36.0", features = ["full"] }
+anyhow = { version = "1.0" }
+macros = { path = "src/macros" }
