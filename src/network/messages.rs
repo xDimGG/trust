@@ -9,10 +9,10 @@ use std::io::Write;
 use std::pin::Pin;
 use std::str;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RGB (u8, u8, u8);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TextMode {
 	Literal,
 	Formattable,
@@ -31,7 +31,7 @@ impl From<u8> for TextMode {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Text (pub TextMode, pub String);
 
 #[message_encoder_decoder]

@@ -18,7 +18,7 @@ pub fn message_encoder_decoder(_: TokenStream, input: TokenStream) -> TokenStrea
 			let fields = fields.named.iter();
 			let name = variant.ident;
 			structs.push(quote! {
-				#[derive(Debug)]
+				#[derive(Debug, Clone)]
 				pub struct #name {
 					#(#fields),*
 				}
@@ -31,7 +31,7 @@ pub fn message_encoder_decoder(_: TokenStream, input: TokenStream) -> TokenStrea
 
 	TokenStream::from(quote! {
 		#(#structs)*
-		#[derive(Debug)]
+		#[derive(Debug, Clone)]
 		pub enum Message<'a> {
 			#(#variants),*
 		}
