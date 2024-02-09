@@ -1,11 +1,9 @@
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{Result, AsyncReadExt};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, broadcast};
 use tokio::select;
-use std::pin::Pin;
 use std::sync::Arc;
-use multiqueue::{broadcast_fut_queue, BroadcastFutReceiver, BroadcastFutSender};
 
 use crate::network::messages::{self, Message, Text, TextMode, ConnectionApprove};
 
@@ -15,27 +13,25 @@ const MAX_CLIENTS: usize = 256;
 pub struct Client {
 	pub details: messages::PlayerDetails,
 	pub addr: SocketAddr,
+	pub uuid: Option<String>,
 }
 
 pub struct Server {
 	pub clients: RwLock<[Option<Client>; MAX_CLIENTS]>,
 	pub password: RwLock<String>,
-	// Option<u8> represents which client to ignore if any
-	pub broadcast_tx: BroadcastFutSender<(Message<'static>, SocketAddr)>,
-	pub broadcast_rx: BroadcastFutReceiver<(Message<'static>, SocketAddr)>,
+	pub broadcast: broadcast::Sender<(Message<'static>, SocketAddr)>,
 }
 
 impl Server {
 	pub fn new(password: &str) -> Server {
 		// https://github.com/rust-lang/rust/issues/44796#issuecomment-967747810
 		const INIT_CLIENT_NONE: Option<Client> = None;
-    let (tx, rx) = broadcast_fut_queue(u64::MAX);
+    let (tx, _) = broadcast::channel(1024);
 
 		Server {
 			password: RwLock::new(password.to_owned()),
 			clients: RwLock::new([INIT_CLIENT_NONE; MAX_CLIENTS]),
-			broadcast_tx: tx,
-			broadcast_rx: rx,
+			broadcast: tx,
 		}
 	}
 
@@ -54,7 +50,7 @@ impl Server {
 
 	async fn accept(&self, stream: &mut TcpStream, addr: SocketAddr) -> Result<()> {
 		let (mut rh, mut wh) = stream.split();
-		let recv = self.broadcast_rx.add_stream();
+		let mut rx = self.broadcast.subscribe();
 
 		loop {
 			let mut length = [0u8; 2];
@@ -70,15 +66,21 @@ impl Server {
 					let mut buffer = vec![0u8; length as usize - 2];
 					rh.read(&mut buffer).await?;
 
-					if let Some(msg) = self.handle_message(Message::from(buffer.as_slice()), &recv, &addr).await? {
+					if let Some(msg) = self.handle_message(Message::from(buffer.as_slice()), &rx, &addr).await? {
 						msg.write(Pin::new(&mut wh)).await.unwrap();
 					}
 				},
+				content = rx.recv() => {
+					let (content, ignore_addr) = content.unwrap();
+					if ignore_addr != addr {
+						content.write(Pin::new(&mut wh)).await.unwrap();
+					}
+				}
 			}
 		}
 	}
 
-	async fn handle_message(&self, msg: Message<'_>, tx: &BroadcastFutReceiver<(Message<'static>, SocketAddr)>, addr: &SocketAddr)
+	async fn handle_message(&self, msg: Message<'_>, tx: &broadcast::Receiver<(Message<'static>, SocketAddr)>, addr: &SocketAddr)
 		-> Result<Option<Message<'static>>> {
 		match msg {
 			Message::VersionIdentifier(version) => {
@@ -104,6 +106,7 @@ impl Server {
 						clients[i] = Some(Client {
 							details: pd,
 							addr: addr.clone(),
+							uuid: None,
 						});
 						break
 					}
@@ -126,7 +129,7 @@ impl Server {
 				}
 			},
 		// 	Message::PlayerHealth(ph) => { dbg!(ph); },
-			// Message::UUID(uuid) => println!("Got UUID: {}", uuid),
+			Message::UUID(_) => Ok(None),
 		// 	Message::PlayerMana(pm) => { dbg!(pm); },
 		// 	Message::PlayerBuffs(pb) => { dbg!(pb); },
 			Message::Unknown(code, buf) => {

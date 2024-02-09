@@ -8,5 +8,4 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.36.0", features = ["full"] }
-multiqueue = "0.3.2"
 macros = { path = "src/macros" }
