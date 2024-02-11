@@ -6,6 +6,7 @@ pub struct RGB (pub u8, pub u8, pub u8);
 pub struct Text (pub TextMode, pub String);
 
 #[derive(Debug, Clone)]
+#[repr(u8)]
 pub enum TextMode {
 	Literal,
 	Formattable,

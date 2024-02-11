@@ -2,18 +2,17 @@ mod binary;
 mod network;
 mod world;
 
-use binary::reader::Reader;
 use network::server::Server;
 use directories::UserDirs;
 
-use std::fs;
+use std::{fs, path::Path};
 
 use world::World;
 
 #[tokio::main]
 async fn main() {
-	let srv = Server::new("password");
-	srv.listen("127.0.0.1:7777").await.unwrap();
+	// let srv = Server::new("password");
+	// srv.listen("127.0.0.1:7777").await.unwrap();
 
 	// let Some(user_dirs) = UserDirs::new() else {
 	// 	panic!("couldn't find user dir")
@@ -26,12 +25,8 @@ async fn main() {
 	// let world_dir = doc_dir.join("My Games").join("Terraria").join("Worlds");
 	// let world_files = fs::read_dir(world_dir).unwrap();
 
-	// for entry in world_files {
-	// 	let path = entry.unwrap().path();
-	// 	let stream = fs::read(path).unwrap();
-	// 	let mut reader = Reader::new(stream.as_slice(), 0);
-	// 	dbg!(World::from_reader(&mut reader));
-	// }
-
-	// fs::read_dir("path")
+	match World::from_file(Path::new("C:\\Users\\Dim\\Documents\\My Games\\Terraria\\Worlds\\dim.wld")) {
+		Ok(w) => { dbg!(w); }
+		Err(e) => { println!("Parse Error: {}", e); }
+	};
 }
