@@ -55,8 +55,8 @@ fn message_decode(input: TokenStream) -> TokenStream {
 		if !doc.contains("->") {
 			continue;
 		}
-	
-		let code = u8::from_str_radix(&doc[5..7], 16).unwrap();
+
+		let code: u8 = doc.split_whitespace().skip(1).next().unwrap().parse().unwrap();
 
 		match variant.fields {
 			Fields::Named(fields) => {
@@ -86,7 +86,7 @@ fn message_decode(input: TokenStream) -> TokenStream {
 	TokenStream::from(quote! {
 		impl<'a> From<&'a [u8]> for Message<'a>  {
 			fn from(buf: &'a [u8]) -> Self {
-				let mut mr = MessageReader::new(buf, 0);
+				let mut mr = Reader::new(buf, 0);
 
 				match mr.read_byte() {
 					#(#cases),*,
@@ -108,6 +108,8 @@ fn message_decode_type(field: &Field) -> TokenStream2 {
 				"i16" => quote! { mr.read_i16() },
 				"u32" => quote! { mr.read_u32() },
 				"i32" => quote! { mr.read_i32() },
+				"u64" => quote! { mr.read_u64() },
+				"i64" => quote! { mr.read_i64() },
 				"String" => quote! { mr.read_string() },
 				"RGB" => quote! { mr.read_rgb() },
 				ty => quote! { compile_error!("Unsupported type: {}", #ty) },
@@ -148,8 +150,8 @@ fn message_encode(input: TokenStream) -> TokenStream {
 		if !doc.contains("<-") {
 			continue;
 		}
-	
-		let code = u8::from_str_radix(&doc[5..7], 16).unwrap();
+
+		let code: u8 = doc.split_whitespace().skip(1).next().unwrap().parse().unwrap();
 
 		match variant.fields {
 			Fields::Named(fields) => {
@@ -160,7 +162,7 @@ fn message_encode(input: TokenStream) -> TokenStream {
 					field_readers.push(message_encode_type(&field, quote! { data.#name }))
 				}
 
-				cases.push(quote! { Message::#name(data) => Ok(MessageWriter::new(#code)#(#field_readers)*.finalize()) })
+				cases.push(quote! { Message::#name(data) => Ok(Writer::new(#code)#(#field_readers)*.finalize()) })
 			},
 			Fields::Unnamed(fields) => {
 				let mut field_names = Vec::new();
@@ -172,9 +174,9 @@ fn message_encode(input: TokenStream) -> TokenStream {
 					field_names.push(quote! { #i })
 				}
 
-				cases.push(quote! { Message::#name(#(#field_names),*) => Ok(MessageWriter::new(#code)#(#field_readers)*.finalize()) })
+				cases.push(quote! { Message::#name(#(#field_names),*) => Ok(Writer::new(#code)#(#field_readers)*.finalize()) })
 			},
-			Fields::Unit => cases.push(quote! { Message::#name => Ok(MessageWriter::new(#code).finalize()) }),
+			Fields::Unit => cases.push(quote! { Message::#name => Ok(Writer::new(#code).finalize()) }),
 		};
 	}
 
@@ -185,7 +187,7 @@ fn message_encode(input: TokenStream) -> TokenStream {
 			fn try_from(msg: Message) -> Result<Self, Self::Error> {
 				match msg {
 					#(#cases),*,
-					Message::Unknown(code, buf) => Ok(MessageWriter::new(code).write_bytes(buf).finalize()),
+					Message::Unknown(code, buf) => Ok(Writer::new(code).write_bytes(buf).finalize()),
 					_ => Err("Unserializable message. Consider using Message::Unknown"),
 				}
 			}
@@ -203,6 +205,8 @@ fn message_encode_type(field: &Field, name: TokenStream2) -> TokenStream2 {
 			"i16" => quote! { .write_i16(#name) },
 			"u32" => quote! { .write_u32(#name) },
 			"i32" => quote! { .write_i32(#name) },
+			"u64" => quote! { .write_u64(#name) },
+			"i64" => quote! { .write_i64(#name) },
 			"String" => quote! { .write_string(#name) },
 			"Text" => quote! { .write_text(#name) },
 			"RGB" => quote! { .write_rgb(#name) },

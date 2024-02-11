@@ -1,0 +1,2 @@
+# trust = terraria rust server
+This repo is my attempt to reverse engineer the Terraria protocol and create a vanilla server in Rust. I document my journey [here](https://angelolloti.com/blog/trust-1/).

@@ -8,4 +8,5 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.36.0", features = ["full"] }
-macros = { path = "src/macros" }
+directories = "5.0"
+macros = { path = "macros" }

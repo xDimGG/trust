@@ -18,18 +18,11 @@ def copy(src, dst, prefix):
 			data = src.recv(size)
 			if not data:
 				break
-			data = bytearray(data)
 
-			code = hex(data[0])[2:].upper().rjust(2, '0')
-			print(f'{prefix} (${code}) {data[1:].hex()}')
-			# if data[0] == 32:
-				# idx = 1
-				# for size, tag in zip([2, 1, 2, 1, 2], ['Chest Index', 'Item Index', 'Stack', 'Prefix', 'netDefaults']):
-				# 	n = int.from_bytes(data[idx:idx+size], 'little')
-				# 	# print(f'{tag}: {n}')
-				# 	if prefix == '[c->s]:' and tag == 'Stack':
-				# 		data[idx:idx+size] = int(999).to_bytes(size, 'little')
-				# 	idx += size
+			print(f'{prefix} ({data[0]}) {data[1:].hex()}')
+			if data[0] == 32:
+				data = bytearray(data)
+				data[4:6] = int(999).to_bytes(2, 'little')
 
 			dst.sendall(data_size + data)
 	except:

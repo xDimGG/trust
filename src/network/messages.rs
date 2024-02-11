@@ -1,6 +1,9 @@
 #![allow(warnings)]
 
 use macros::message_encoder_decoder;
+use crate::binary::types::{RGB, Text};
+use crate::binary::writer::Writer;
+use crate::binary::reader::Reader;
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
@@ -9,45 +12,76 @@ use std::io::Write;
 use std::pin::Pin;
 use std::str;
 
-#[derive(Debug, Clone)]
-pub struct RGB (u8, u8, u8);
-
-#[derive(Debug, Clone)]
-pub enum TextMode {
-	Literal,
-	Formattable,
-	LocalizationKey,
-	Invalid,
+pub trait Sanitize {
+	fn sanitize(&mut self, src: u8);
 }
 
-impl From<u8> for TextMode {
-	fn from(value: u8) -> Self {
-		match value {
-			0 => Self::Literal,
-			1 => Self::Formattable,
-			2 => Self::LocalizationKey,
-			_ => Self::Invalid,
+const MAX_VARIANT_COUNT: u8 = 12; // PlayerVariantID.Count
+const MAX_HAIR: u8 = 165; // from MessageBuffer case 4
+
+impl Sanitize for PlayerDetails {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+		if self.skin_variant >= MAX_VARIANT_COUNT {
+			self.skin_variant = MAX_VARIANT_COUNT - 1;
+		}
+		if self.hair >= MAX_HAIR {
+			self.hair = 0;
 		}
 	}
 }
 
-#[derive(Debug, Clone)]
-pub struct Text (pub TextMode, pub String);
+const MIN_MAXIMUM_HEALTH: i16 = 100; // from MessageBuffer case 16
+
+impl Sanitize for PlayerHealth {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+		if self.maximum >= MIN_MAXIMUM_HEALTH {
+			self.maximum = MIN_MAXIMUM_HEALTH;
+		}
+	}
+}
+
+impl Sanitize for PlayerMana {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+	}
+}
+
+impl Sanitize for PlayerBuffs {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+	}
+}
+
+impl Sanitize for PlayerLoadout {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+	}
+}
+
+impl Sanitize for PlayerInventorySlot {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+	}
+}
+
+const MAX_BUFFS: usize = 44; // from Player.maxBuffs
 
 #[message_encoder_decoder]
 pub enum Message<'a> {
-	/// $01 ->
+	/// 1 ->
 	VersionIdentifier(String),
-	/// $02 <-
+	/// 2 <-
 	ConnectionRefuse(Text),
-	/// $03 <-
+	/// 3 <-
 	ConnectionApprove {
-		pub id: u8, // always 0
-		pub b: bool, // always false. idk what it means
+		pub client_id: u8,
+		pub flag: bool, // "ServerWantsToRunCheckBytesInClientLoopThread" flag. Seems to be always false.
 	},
-	/// $04 ->
+	/// 4 <->
 	PlayerDetails {
-		pub id: u8,
+		pub client_id: u8,
 		pub skin_variant: u8,
 		pub hair: u8,
 		pub name: String,
@@ -87,192 +121,69 @@ pub enum Message<'a> {
 		 */
 		pub flags_3: u8,
 	},
-	/// $05 ->
+	/// 5 <->
 	PlayerInventorySlot {
 		pub client_id: u8,
-		pub slot_id: u16,
-		pub amount: u16,
+		pub slot_id: i16,
+		pub amount: i16,
 		pub prefix: u8,
-		pub item_id: u16,
+		pub item_id: i16,
 	},
-	/// $06 ->
+	/// 6 ->
 	WorldRequest,
-	/// $08 ->
+	/// 8 ->
 	SpawnRequest {
 		pub x: i32,
 		pub y: i32,
 	},
-	/// $10 ->
+	/// 16 <->
 	PlayerHealth {
 		pub client_id: u8,
-		pub current: u16,
-		pub maximum: u16,
+		pub current: i16,
+		pub maximum: i16,
 	},
-	/// $25 <-
+	/// 37 <-
 	PasswordRequest,
-	/// $26 ->
+	/// 38 ->
 	PasswordResponse(String),
-	/// $2A ->
+	/// 42 ->
 	PlayerMana {
 		pub client_id: u8,
-		pub current: u16,
-		pub maximum: u16,
+		pub current: i16,
+		pub maximum: i16,
 	},
-	/// $32 ->
+	/// 50 ->
 	PlayerBuffs {
 		pub client_id: u8,
-		pub buffs: [u16; 22],
+		pub buffs: [u16; MAX_BUFFS],
 	},
-	/// $44 ->
+	/// 68 ->
 	UUID(String),
-	/// $53 <-
+	/// 83 <-
 	KillCount {
 		pub id: u16,
 		pub amount: u32,
 	},
-	/// $65 <-
+	/// 101 <-
 	PillarsStatus {
 		pub solar: u16,
 		pub vortex: u16,
 		pub nebula: u16,
 		pub stardust: u16,
 	},
-	/// $00 <->
+	/// 147 <->
+	PlayerLoadout {
+		pub client_id: u8,
+		pub index: u8,
+		pub hide_accessory: u16,
+	},
+	/// 0 <->
 	Unknown(u8, &'a [u8]),
-}
-
-struct MessageReader<'a> {
-	buf: &'a [u8],
-	cur: usize,
-}
-
-impl<'a> MessageReader<'a> {
-	fn new(buf: &'a [u8], cur: usize) -> Self {
-		Self { buf, cur }
-	}
-
-	fn read_bytes(&mut self, amount: usize) -> &[u8] {
-		self.cur += amount;
-		&self.buf[(self.cur - amount)..self.cur]
-	}
-
-	fn read_byte(&mut self) -> u8 {
-		self.read_bytes(1)[0]
-	}
-
-	fn read_bool(&mut self) -> bool {
-		self.read_byte() != 0
-	}
-
-	fn read_i8(&mut self) -> i8 {
-		self.read_byte() as i8
-	}
-
-	fn read_u16(&mut self) -> u16 {
-		u16::from_le_bytes(self.read_bytes(2).try_into().unwrap())
-	}
-
-	fn read_i16(&mut self) -> i16 {
-		i16::from_le_bytes(self.read_bytes(2).try_into().unwrap())
-	}
-
-	fn read_u32(&mut self) -> u32 {
-		u32::from_le_bytes(self.read_bytes(4).try_into().unwrap())
-	}
-
-	fn read_i32(&mut self) -> i32 {
-		i32::from_le_bytes(self.read_bytes(4).try_into().unwrap())
-	}
-
-	fn read_string(&mut self) -> String {
-		let length = self.read_byte() as usize;
-		str::from_utf8(self.read_bytes(length)).unwrap_or("").to_string()
-	}
-
-	fn read_text(&mut self) -> Text {
-		Text(self.read_byte().into(), self.read_string())
-	}
-
-	fn read_rgb(&mut self) -> RGB {
-		RGB(self.read_byte(), self.read_byte(), self.read_byte())
-	}
 }
 
 impl<'a> Message<'a> {
 	pub async fn write(self, mut stream: Pin<&mut impl AsyncWrite>) -> Result<usize, &str> {
 		let buffer: Vec<u8> = self.try_into()?;
 		stream.write(&buffer).await.map_err(|_| "Error while writing")
-	}
-}
-
-struct MessageWriter {
-	buf: Vec<u8>,
-}
-
-impl<'a> MessageWriter {
-	fn new(code: u8) -> Self {
-		Self { buf: vec![0, 0, code] }
-	}
-
-	fn finalize(mut self) -> Vec<u8> {
-		let [a, b] = (self.buf.len() as u16).to_le_bytes();
-		self.buf[0] = a;
-		self.buf[1] = b;
-		self.buf
-	}
-
-	fn write_bytes(mut self, bytes: &[u8]) -> Self {
-		self.buf.append(&mut bytes.to_vec());
-		self
-	}
-
-	#[allow(dead_code)]
-	fn write_byte(mut self, byte: u8) -> Self {
-		self.buf.push(byte);
-		self
-	}
-
-	fn write_bool(self, b: bool) -> Self {
-		self.write_byte(b as u8)
-	}
-
-	fn write_i8(self, num: i8) -> Self {
-		self.write_bytes(&mut num.to_le_bytes().to_vec())
-	}
-
-	fn write_u16(self, num: u16) -> Self {
-		self.write_bytes(&mut num.to_le_bytes().to_vec())
-	}
-
-	fn write_i16(self, num: i16) -> Self {
-		self.write_bytes(&mut num.to_le_bytes().to_vec())
-	}
-
-	fn write_u32(self, num: u32) -> Self {
-		self.write_bytes(&mut num.to_le_bytes().to_vec())
-	}
-
-	fn write_i32(self, num: i32) -> Self {
-		self.write_bytes(&mut num.to_le_bytes().to_vec())
-	}
-
-	fn write_string(mut self, string: String) -> Self {
-		self
-			.write_byte(string.len() as u8)
-			.write_bytes(string.as_bytes())
-			.write_byte(0)
-	}
-
-	fn write_text(mut self, text: Text) -> Self {
-		self
-			.write_byte(text.0 as u8)
-			.write_string(text.1)
-	}
-
-	fn write_rgb(mut self, rgb: RGB) -> Self {
-		self
-			.write_byte(rgb.0)
-			.write_byte(rgb.1)
-			.write_byte(rgb.2)
 	}
 }
