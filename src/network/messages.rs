@@ -70,11 +70,11 @@ const MAX_BUFFS: usize = 44; // from Player.maxBuffs
 
 #[message_encoder_decoder]
 pub enum Message<'a> {
-	/// 1 ->
+	/// 1 <-
 	VersionIdentifier(String),
-	/// 2 <-
+	/// 2 ->
 	ConnectionRefuse(Text),
-	/// 3 <-
+	/// 3 ->
 	ConnectionApprove {
 		pub client_id: u8,
 		pub flag: bool, // "ServerWantsToRunCheckBytesInClientLoopThread" flag. Seems to be always false.
@@ -129,9 +129,9 @@ pub enum Message<'a> {
 		pub prefix: u8,
 		pub item_id: i16,
 	},
-	/// 6 ->
+	/// 6 <-
 	WorldRequest,
-	/// 8 ->
+	/// 8 <-
 	SpawnRequest {
 		pub x: i32,
 		pub y: i32,
@@ -142,29 +142,29 @@ pub enum Message<'a> {
 		pub current: i16,
 		pub maximum: i16,
 	},
-	/// 37 <-
+	/// 37 ->
 	PasswordRequest,
-	/// 38 ->
+	/// 38 <-
 	PasswordResponse(String),
-	/// 42 ->
+	/// 42 <-
 	PlayerMana {
 		pub client_id: u8,
 		pub current: i16,
 		pub maximum: i16,
 	},
-	/// 50 ->
+	/// 50 <-
 	PlayerBuffs {
 		pub client_id: u8,
 		pub buffs: [u16; MAX_BUFFS],
 	},
-	/// 68 ->
+	/// 68 <-
 	UUID(String),
-	/// 83 <-
+	/// 83 ->
 	KillCount {
 		pub id: u16,
 		pub amount: u32,
 	},
-	/// 101 <-
+	/// 101 ->
 	PillarsStatus {
 		pub solar: u16,
 		pub vortex: u16,

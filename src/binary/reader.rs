@@ -7,8 +7,8 @@ pub struct Reader<'a> {
 
 #[allow(dead_code)]
 impl<'a> Reader<'a> {
-	pub fn new(buf: &'a [u8], cur: usize) -> Self {
-		Self { buf, cur }
+	pub fn new(buf: &'a [u8]) -> Self {
+		Self { buf, cur: 0 }
 	}
 
 	pub fn read_bytes(&mut self, amount: usize) -> &[u8] {

@@ -261,15 +261,22 @@ pub struct WorldFormat {
 	pub positions: Vec<i32>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct WorldTile {
-
+	pub active: bool,
+	pub block: u16,
+	pub frame_x: i16,
+	pub frame_y: i16,
+	pub color: u8,
+	pub wall: u8,
+	pub wall_color: u8,
+	pub liquid: u8, // Water, Lava, Honey, Shimmer
 }
 
 impl World {
 	pub fn from_file(path: &Path) -> Result<World, WorldParseError> {
 		let contents = fs::read(path).map_err(WorldParseError::FSError)?;
-		let mut reader = SafeReader::new(contents.as_slice(), 0);
+		let mut reader = SafeReader::new(contents.as_slice());
 		let mut world = Self::from_reader(&mut reader)?;
 
 		if world.metadata.version < 141 {
@@ -769,16 +776,21 @@ impl World {
 		for x in 0..header.width {
 			let mut column = Vec::with_capacity(header.height as usize);
 			for y in 0..header.height {
-				let flags = r.read_byte()?;
-				if flags & 1 != 0 {
-					let num5 = r.read_byte()?;
-					if num5 & 1 != 0 {
-						let num4 = r.read_byte()?;
-						if num4 & 1 != 0 {
-							let num3 = r.read_byte()?;
+				let b_0 = r.read_byte()?;
+				let mut b_1 = 0;
+				let mut b_2 = 0;
+				let mut b_3 = 0;
+				if b_0 & 1 == 1 {
+					b_1 = r.read_byte()?;
+					if b_1 & 1 == 1 {
+						b_2 = r.read_byte()?;
+						if b_2 & 1 == 1 {
+							b_3 = r.read_byte()?;
 						}
 					}
 				}
+
+
 			}
 
 			map.push(column);

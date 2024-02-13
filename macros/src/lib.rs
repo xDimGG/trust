@@ -52,7 +52,7 @@ fn message_decode(input: TokenStream) -> TokenStream {
 		}
 
 		let doc = variant.attrs.first().unwrap().span().source_text().unwrap();
-		if !doc.contains("->") {
+		if !doc.contains("<-") {
 			continue;
 		}
 
@@ -86,7 +86,7 @@ fn message_decode(input: TokenStream) -> TokenStream {
 	TokenStream::from(quote! {
 		impl<'a> From<&'a [u8]> for Message<'a>  {
 			fn from(buf: &'a [u8]) -> Self {
-				let mut mr = Reader::new(buf, 0);
+				let mut mr = Reader::new(buf);
 
 				match mr.read_byte() {
 					#(#cases),*,
@@ -147,7 +147,7 @@ fn message_encode(input: TokenStream) -> TokenStream {
 		}
 
 		let doc = variant.attrs.first().unwrap().span().source_text().unwrap();
-		if !doc.contains("<-") {
+		if !doc.contains("->") {
 			continue;
 		}
 
