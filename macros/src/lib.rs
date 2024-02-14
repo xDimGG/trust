@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, spanned::Spanned, Field, Fields, ItemEnum, Type};
 
@@ -44,7 +44,6 @@ pub fn message_encoder_decoder(_: TokenStream, input: TokenStream) -> TokenStrea
 	})
 }
 
-
 fn message_decode(input: TokenStream) -> TokenStream {
 	let input = parse_macro_input!(input as ItemEnum);
 	let mut cases = Vec::new();
@@ -68,7 +67,7 @@ fn message_decode(input: TokenStream) -> TokenStream {
 				let mut field_readers = Vec::new();
 
 				for field in fields.named {
-					field_readers.push(message_decode_type(&field));
+					field_readers.push(field_to_read_method(&field));
 					field_names.push(field.ident.unwrap())
 				}
 
@@ -78,7 +77,7 @@ fn message_decode(input: TokenStream) -> TokenStream {
 				let mut field_readers = Vec::new();
 
 				for field in fields.unnamed {
-					field_readers.push(message_decode_type(&field))
+					field_readers.push(field_to_read_method(&field))
 				}
 
 				cases.push(quote! { #code => Self::#name(#(#field_readers),*) })
@@ -90,9 +89,9 @@ fn message_decode(input: TokenStream) -> TokenStream {
 	TokenStream::from(quote! {
 		impl<'a> From<&'a [u8]> for Message<'a>  {
 			fn from(buf: &'a [u8]) -> Self {
-				let mut mr = Reader::new(buf);
+				let mut r = Reader::new(buf);
 
-				match mr.read_byte() {
+				match r.read_byte() {
 					#(#cases),*,
 					code => Self::Unknown(code, &buf[1..]),
 				}
@@ -101,37 +100,41 @@ fn message_decode(input: TokenStream) -> TokenStream {
 	})
 }
 
-fn message_decode_type(field: &Field) -> TokenStream2 {
+fn type_to_read_method(s: &str) -> TokenStream2 {
+	match s {
+		"bool" => quote! { r.read_bool() },
+		"u8" => quote! { r.read_byte() },
+		"i8" => quote! { r.read_i8() },
+		"u16" => quote! { r.read_u16() },
+		"i16" => quote! { r.read_i16() },
+		"u32" => quote! { r.read_u32() },
+		"i32" => quote! { r.read_i32() },
+		"u64" => quote! { r.read_u64() },
+		"i64" => quote! { r.read_i64() },
+		"String" => quote! { r.read_string() },
+		"Text" => quote! { r.read_text() },
+		"RGB" => quote! { r.read_rgb() },
+		ty => quote! { compile_error!("Unsupported type: {}", #ty) },
+	}
+}
+
+fn field_to_read_method(field: &Field) -> TokenStream2 {
 	match &field.ty {
 		Type::Path(ty) => {
-			match ty.path.segments.first().unwrap().ident.to_string().as_str() {
-				"bool" => quote! { mr.read_bool() },
-				"u8" => quote! { mr.read_byte() },
-				"i8" => quote! { mr.read_i8() },
-				"u16" => quote! { mr.read_u16() },
-				"i16" => quote! { mr.read_i16() },
-				"u32" => quote! { mr.read_u32() },
-				"i32" => quote! { mr.read_i32() },
-				"u64" => quote! { mr.read_u64() },
-				"i64" => quote! { mr.read_i64() },
-				"String" => quote! { mr.read_string() },
-				"RGB" => quote! { mr.read_rgb() },
-				ty => quote! { compile_error!("Unsupported type: {}", #ty) },
-			}
+			type_to_read_method(ty.path.segments.first().unwrap().ident.to_string().as_str())
 		},
 		Type::Array(ty) => {
 			if let Type::Path(at) = &*ty.elem {
 				let len = &ty.len;
-				match at.path.segments.first().unwrap().ident.to_string().as_str() {
-					"u16" => quote! { {
-						let mut buf = [0u16; #len];
-						for num in &mut buf {
-							*num = u16::from_le_bytes(mr.read_bytes(2).try_into().unwrap())
-						}
-						buf
-					} },
-					ty => quote! { compile_error!("Unsupported array type: {}", #ty) },
-				}
+				let ident = &at.path.segments.first().unwrap().ident;
+				let method = type_to_read_method(ident.to_string().as_str());
+				quote! { {
+					let mut buf = [#ident::default(); #len];
+					for num in &mut buf {
+						*num = #method
+					}
+					buf
+				} }
 			} else {
 				quote! { compile_error!("Array element is not TypePath") }
 			}
@@ -159,28 +162,42 @@ fn message_encode(input: TokenStream) -> TokenStream {
 
 		match variant.fields {
 			Fields::Named(fields) => {
-				let mut field_readers = Vec::new();
+				let mut methods = Vec::new();
 
 				for field in fields.named {
 					let name = field.ident.as_ref().unwrap();
-					field_readers.push(message_encode_type(&field, quote! { data.#name }))
+					methods.push(field_to_write_method(&field, quote! { data.#name }))
 				}
 
-				cases.push(quote! { Message::#name(data) => Ok(Writer::new(#code)#(#field_readers)*.finalize()) })
+				cases.push(quote! {
+					Message::#name(data) => {
+						let mut w = Writer::new(#code);
+						#(#methods);*;
+						Ok(w.finalize())
+			 		}
+				})
 			},
 			Fields::Unnamed(fields) => {
-				let mut field_names = Vec::new();
-				let mut field_readers = Vec::new();
+				let mut args = Vec::new();
+				let mut methods = Vec::new();
 
 				for (i, field) in fields.unnamed.iter().enumerate() {
 					let i = format_ident!("field{}", i);
-					field_readers.push(message_encode_type(field, quote! { #i }));
-					field_names.push(quote! { #i })
+					methods.push(field_to_write_method(field, quote! { #i }));
+					args.push(quote! { #i })
 				}
 
-				cases.push(quote! { Message::#name(#(#field_names),*) => Ok(Writer::new(#code)#(#field_readers)*.finalize()) })
+				cases.push(quote! {
+					Message::#name(#(#args),*) => {
+						let mut w = Writer::new(#code);
+						#(#methods);*;
+						Ok(w.finalize())
+			 		}
+				})
 			},
-			Fields::Unit => cases.push(quote! { Message::#name => Ok(Writer::new(#code).finalize()) }),
+			Fields::Unit => cases.push(quote! {
+				Message::#name => Ok(Writer::new(#code).finalize()),
+			}),
 		};
 	}
 
@@ -190,8 +207,12 @@ fn message_encode(input: TokenStream) -> TokenStream {
 
 			fn try_from(msg: Message) -> Result<Self, Self::Error> {
 				match msg {
-					#(#cases),*,
-					Message::Unknown(code, buf) => Ok(Writer::new(code).write_bytes(buf).finalize()),
+					#(#cases)*
+					Message::Unknown(code, buf) => {
+						let mut w = Writer::new(code);
+						w.write_bytes(buf);
+						Ok(w.finalize())
+					}
 					_ => Err("Unserializable message. Consider using Message::Unknown"),
 				}
 			}
@@ -199,24 +220,42 @@ fn message_encode(input: TokenStream) -> TokenStream {
 	})
 }
 
-fn message_encode_type(field: &Field, name: TokenStream2) -> TokenStream2 {
-	if let Type::Path(ty) = &field.ty {
-		match ty.path.segments.first().unwrap().ident.to_string().as_str() {
-			"bool" => quote! { .write_bool(#name) },
-			"u8" => quote! { .write_byte(#name) },
-			"i8" => quote! { .write_i8(#name) },
-			"u16" => quote! { .write_u16(#name) },
-			"i16" => quote! { .write_i16(#name) },
-			"u32" => quote! { .write_u32(#name) },
-			"i32" => quote! { .write_i32(#name) },
-			"u64" => quote! { .write_u64(#name) },
-			"i64" => quote! { .write_i64(#name) },
-			"String" => quote! { .write_string(#name) },
-			"Text" => quote! { .write_text(#name) },
-			"RGB" => quote! { .write_rgb(#name) },
-			ty => quote! { compile_error!("Unknown type: {}", #ty) },
-		}
-	} else {
-		quote! { compile_error!("Field is not TypePath") }
+fn type_to_write_method(s: &str, arg: TokenStream2) -> TokenStream2 {
+	match s {
+		"bool" => quote! { w.write_bool(#arg) },
+		"u8" => quote! { w.write_byte(#arg) },
+		"i8" => quote! { w.write_i8(#arg) },
+		"u16" => quote! { w.write_u16(#arg) },
+		"i16" => quote! { w.write_i16(#arg) },
+		"u32" => quote! { w.write_u32(#arg) },
+		"i32" => quote! { w.write_i32(#arg) },
+		"u64" => quote! { w.write_u64(#arg) },
+		"i64" => quote! { w.write_i64(#arg) },
+		"String" => quote! { w.write_string(#arg) },
+		"Text" => quote! { w.write_text(#arg) },
+		"RGB" => quote! { w.write_rgb(#arg) },
+		ty => quote! { compile_error!("Unsupported type: {}", #ty) },
+	}
+}
+
+fn field_to_write_method(field: &Field, name: TokenStream2) -> TokenStream2 {
+	match &field.ty {
+		Type::Path(ty) => {
+			type_to_write_method(ty.path.segments.first().unwrap().ident.to_string().as_str(), name)
+		},
+		Type::Array(ty) => {
+			if let Type::Path(at) = &*ty.elem {
+				let ident = &at.path.segments.first().unwrap().ident;
+				let method = type_to_write_method(ident.to_string().as_str(), quote! { x });
+				quote! {
+					for x in #name {
+						#method
+					}
+				}
+			} else {
+				quote! { compile_error!("Array element is not TypePath") }
+			}
+		},
+		_ => quote! { compile_error!("Field is not TypePath") },
 	}
 }

@@ -5,16 +5,16 @@ mod network;
 mod world;
 
 use network::server::Server;
-use directories::UserDirs;
-
-use std::{fs, path::Path};
-
+use std::path::Path;
 use world::types::World;
+
+// use directories::UserDirs;
 
 #[tokio::main]
 async fn main() {
-	// let srv = Server::new("password");
-	// srv.listen("127.0.0.1:7777").await.unwrap();
+	let world = World::from_file(Path::new("C:\\Users\\Dim\\Documents\\My Games\\Terraria\\Worlds\\shimmer.wld")).unwrap();
+	let srv = Server::new(world, "password");
+	srv.listen("127.0.0.1:7777").await.unwrap();
 
 	// let Some(user_dirs) = UserDirs::new() else {
 	// 	panic!("couldn't find user dir")
@@ -26,9 +26,4 @@ async fn main() {
 
 	// let world_dir = doc_dir.join("My Games").join("Terraria").join("Worlds");
 	// let world_files = fs::read_dir(world_dir).unwrap();
-
-	match World::from_file(Path::new("C:\\Users\\Dim\\Documents\\My Games\\Terraria\\Worlds\\shimmer.wld")) {
-		Ok(w) => { dbg!(w.header.name); }
-		Err(e) => { println!("Parse Error: {}", e); }
-	};
 }

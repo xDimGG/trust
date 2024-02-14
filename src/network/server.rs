@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use crate::network::messages::{self, Sanitize, Message, ConnectionApprove};
 use crate::binary::types::{Text, TextMode};
+use crate::world::types::World;
 
 const GAME_VERSION: &str = "Terraria279";
 const MAX_CLIENTS: usize = 256;
@@ -55,18 +56,21 @@ impl Client {
 }
 
 pub struct Server {
-	pub clients: Arc<Mutex<[Option<Client>; MAX_CLIENTS]>>,
+	pub world: RwLock<World>,
 	pub password: RwLock<String>,
+	pub clients: Arc<Mutex<[Option<Client>; MAX_CLIENTS]>>,
 	pub broadcast: broadcast::Sender<(Message<'static>, Option<usize>)>,
 }
 
 impl Server {
-	pub fn new(password: &str) -> Server {
+	pub fn new(world: World, password: &str) -> Server {
 		// https://github.com/rust-lang/rust/issues/44796#issuecomment-967747810
 		const INIT_CLIENT_NONE: Option<Client> = None;
     let (tx, _) = broadcast::channel(1024);
 
+
 		Server {
+			world: RwLock::new(world),
 			password: RwLock::new(password.to_owned()),
 			clients: Arc::new(Mutex::new([INIT_CLIENT_NONE; MAX_CLIENTS])),
 			broadcast: tx,

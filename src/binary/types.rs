@@ -1,18 +1,19 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RGB (pub u8, pub u8, pub u8);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Text (pub TextMode, pub String);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Vector2 (pub f32, pub f32);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 #[repr(u8)]
 pub enum TextMode {
 	Literal,
 	Formattable,
 	LocalizationKey,
+	#[default]
 	Invalid,
 }
 

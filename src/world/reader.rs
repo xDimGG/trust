@@ -825,7 +825,7 @@ impl World {
 					let mut item_flags = r.read_byte()?;
 					let mut dye_flags = r.read_byte()?;
 
-					for item in doll.items.iter_mut() {
+					for item in &mut doll.items {
 						if item_flags & 1 == 1 {
 							item.id = r.read_i16()?;
 							item.prefix = r.read_byte()?;
@@ -834,7 +834,7 @@ impl World {
 						item_flags >>= 1;
 					};
 
-					for item in doll.dyes.iter_mut() {
+					for item in &mut doll.dyes {
 						if dye_flags & 1 == 1 {
 							item.id = r.read_i16()?;
 							item.prefix = r.read_byte()?;
@@ -850,7 +850,7 @@ impl World {
 					let mut rack = HatRack::default();
 					let mut flags = r.read_byte()?;
 
-					for item in rack.items.iter_mut() {
+					for item in &mut rack.items {
 						if flags & 1 == 1 {
 							item.id = r.read_i16()?;
 							item.prefix = r.read_byte()?;
@@ -860,7 +860,7 @@ impl World {
 					};
 
 
-					for item in rack.dyes.iter_mut() {
+					for item in &mut rack.dyes {
 						if flags & 1 == 1 {
 							item.id = r.read_i16()?;
 							item.prefix = r.read_byte()?;

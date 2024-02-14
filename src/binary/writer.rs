@@ -17,74 +17,69 @@ impl Writer {
 		self.buf
 	}
 
-	pub fn write_bytes(mut self, bytes: &[u8]) -> Self {
-		self.buf.append(&mut bytes.to_vec());
-		self
+	pub fn write_bytes(&mut self, bytes: &[u8]) {
+		self.buf.append(&mut bytes.to_vec())
 	}
 
-	pub fn write_byte(mut self, byte: u8) -> Self {
-		self.buf.push(byte);
-		self
+	pub fn write_byte(&mut self, byte: u8) {
+		self.buf.push(byte)
 	}
 
-	pub fn write_bool(self, b: bool) -> Self {
+	pub fn write_bool(&mut self, b: bool) {
 		self.write_byte(b as u8)
 	}
 
-	pub fn write_i8(self, num: i8) -> Self {
+	pub fn write_i8(&mut self, num: i8) {
 		self.write_bytes(&num.to_le_bytes())
 	}
 
-	pub fn write_u16(self, num: u16) -> Self {
+	pub fn write_u16(&mut self, num: u16) {
 		self.write_bytes(&num.to_le_bytes())
 	}
 
-	pub fn write_i16(self, num: i16) -> Self {
+	pub fn write_i16(&mut self, num: i16) {
 		self.write_bytes(&num.to_le_bytes())
 	}
 
-	pub fn write_u32(self, num: u32) -> Self {
+	pub fn write_u32(&mut self, num: u32) {
 		self.write_bytes(&num.to_le_bytes())
 	}
 
-	pub fn write_i32(self, num: i32) -> Self {
+	pub fn write_i32(&mut self, num: i32) {
 		self.write_bytes(&num.to_le_bytes())
 	}
 
-	pub fn write_u64(self, num: u64) -> Self {
+	pub fn write_u64(&mut self, num: u64) {
 		self.write_bytes(&num.to_le_bytes())
 	}
 
-	pub fn write_i64(self, num: i64) -> Self {
+	pub fn write_i64(&mut self, num: i64) {
 		self.write_bytes(&num.to_le_bytes())
 	}
 
-	pub fn write_length(mut self, mut len: usize) -> Self {
+	pub fn write_length(&mut self, mut len: usize) {
 		while len >= (1 << 7) {
-			self = self.write_byte((len & 0b1111111) as u8 | (1 << 7));
+			self.write_byte((len & 0b1111111) as u8 | (1 << 7));
 			len >>= 7; // shift the whole thing by seven
 		}
 
 		self.write_byte(len as u8)
 	}
 
-	pub fn write_string(self, string: String) -> Self {
-		self
-			.write_length(string.len())
-			.write_bytes(string.as_bytes())
-			.write_byte(0)
+	pub fn write_string(&mut self, string: String) {
+		self.write_length(string.len());
+		self.write_bytes(string.as_bytes());
+		self.write_byte(0)
 	}
 
-	pub fn write_text(self, text: Text) -> Self {
-		self
-			.write_byte(text.0 as u8)
-			.write_string(text.1)
+	pub fn write_text(&mut self, text: Text) {
+		self.write_byte(text.0 as u8);
+		self.write_string(text.1)
 	}
 
-	pub fn write_rgb(self, rgb: RGB) -> Self {
-		self
-			.write_byte(rgb.0)
-			.write_byte(rgb.1)
-			.write_byte(rgb.2)
+	pub fn write_rgb(&mut self, rgb: RGB) {
+		self.write_byte(rgb.0);
+		self.write_byte(rgb.1);
+		self.write_byte(rgb.2)
 	}
 }

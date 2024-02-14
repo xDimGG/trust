@@ -44,6 +44,7 @@ impl From<u8> for GameMode {
 
 pub const MAGIC_STRING: &[u8] = "relogic".as_bytes();
 
+#[derive(Debug)]
 pub enum WorldParseError {
 	UnexpectedEOF,
 	InvalidNumber,

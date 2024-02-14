@@ -2,6 +2,7 @@ use macros::message_encoder_decoder;
 use crate::binary::types::{RGB, Text};
 use crate::binary::writer::Writer;
 use crate::binary::reader::Reader;
+use crate::world::types::{GameMode, BG_COUNT};
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
@@ -128,6 +129,26 @@ pub enum Message<'a> {
 	},
 	/// 6 <-
 	WorldRequest,
+	/// 7 ->
+	WorldHeader {
+		time: i32,
+		time_flags: u8,
+		moon_phase: u8,
+		width: i16,
+		height: i16,
+		spawn_x: i16,
+		spawn_y: i16,
+		world_surface: i16,
+		rock_layer: i16,
+		id: i32,
+		name: String,
+		game_mode: u8,
+		uuid: [u8; 16],
+		worldgen_version: u64,
+		moon_type: u8,
+		bg: [u8; BG_COUNT],
+		// ice_back_style: []
+	},
 	/// 8 <-
 	SpawnRequest {
 		x: i32,
