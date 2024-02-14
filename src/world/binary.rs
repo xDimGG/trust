@@ -1,16 +1,16 @@
-use crate::binary::types::{Text, RGB};
+use crate::binary::types::{Text, RGB, Vector2};
 use crate::world::WorldParseError;
 
-pub struct SafeReader<'a> {
-	buf: &'a [u8],
+pub struct SafeReader {
+	buf: Vec<u8>,
 	cur: usize,
 }
 
 type R<T> = Result<T, WorldParseError>;
 
 #[allow(dead_code)]
-impl<'a> SafeReader<'a> {
-	pub fn new(buf: &'a [u8]) -> Self {
+impl SafeReader {
+	pub fn new(buf: Vec<u8>) -> Self {
 		Self { buf, cur: 0 }
 	}
 
@@ -79,12 +79,25 @@ impl<'a> SafeReader<'a> {
 		Ok(f64::from_le_bytes(self.read_bytes(8)?.try_into().map_err(|_| WorldParseError::InvalidNumber)?))
 	}
 
-	pub fn read_string(&mut self) -> R<String> {
-		let length = self.read_byte()? as usize;
-		match std::str::from_utf8(self.read_bytes(length)?) {
-			Ok(c) => Ok(c.to_string()),
-			Err(_) => Err(WorldParseError::InvalidString),
+	pub fn read_vector2(&mut self) -> R<Vector2> {
+		Ok(Vector2(self.read_f32()?, self.read_f32()?))
+	}
+
+	pub fn read_length(&mut self) -> R<usize> {
+		let mut length = self.read_byte()? as usize;
+		let mut shift = 7;
+		while length & (1 << shift) != 0 {
+			length &= !(1 << shift);
+			length |= (self.read_byte()? as usize) << shift;
+			shift += 7;
 		}
+
+		Ok(length)
+	}
+
+	pub fn read_string(&mut self) -> R<String> {
+		let length = self.read_length()?;
+		Ok(unsafe { std::str::from_utf8_unchecked(self.read_bytes(length)?).to_owned() })
 	}
 
 	pub fn read_text(&mut self) -> R<Text> {

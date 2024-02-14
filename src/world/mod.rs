@@ -1,8 +1,8 @@
 pub mod binary;
 
-use std::{fmt, fs::{self, File}, io, os::windows::fs::MetadataExt, path::Path, str};
+use std::{collections::HashSet, fmt, fs, io, os::windows::fs::MetadataExt, path::Path, str::{self, Utf8Error}};
 
-use crate::binary::reader::Reader;
+use crate::binary::types::Vector2;
 
 use self::binary::SafeReader;
 
@@ -51,10 +51,10 @@ const MAGIC_STRING: &[u8] = "relogic".as_bytes();
 pub enum WorldParseError {
 	UnexpectedEOF,
 	InvalidNumber,
-	InvalidString,
 	BadFileSignature,
 	ExpectedWorldType,
-	PositionCheckFailed,
+	InvalidString(Utf8Error),
+	PositionCheckFailed(String),
 	UnsupportedVersion(i32),
 	FSError(io::Error),
 }
@@ -64,10 +64,10 @@ impl fmt::Display for WorldParseError {
 		match self {
 			Self::UnexpectedEOF => write!(f, "Expected more data but reach end of file."),
 			Self::InvalidNumber => write!(f, "Could not parse number"),
-			Self::InvalidString => write!(f, "Could not parse string"),
+			Self::InvalidString(err) => write!(f, "Could not parse string, got {}", err),
 			Self::BadFileSignature => write!(f, "Invalid file signature (expecting \"{}\")", str::from_utf8(MAGIC_STRING).unwrap()),
 			Self::ExpectedWorldType => write!(f, "Expected file type to be world file"),
-			Self::PositionCheckFailed => write!(f, "Position of buffer cursor does not match metadata position"),
+			Self::PositionCheckFailed(s) => write!(f, "Position of buffer cursor does not match metadata position for field {}", s),
 			Self::UnsupportedVersion(v) => write!(f, "Unsupported file version: {}", v),
 			Self::FSError(err) => write!(f, "{}", err),
 		}
@@ -76,13 +76,18 @@ impl fmt::Display for WorldParseError {
 
 #[derive(Debug, Clone)]
 pub struct World {
-	pub metadata: WorldMetadata,
-	pub format: WorldFormat,
-	pub header: WorldHeader,
+	pub metadata: Metadata,
+	pub format: Format,
+	pub header: Header,
+	pub tiles: Vec<Vec<Tile>>,
+	pub chests: Vec<Chest>,
+	pub signs: Vec<Sign>,
+	pub npcs: Vec<NPC>,
+	pub entities: Vec<Entity>,
 }
 
 #[derive(Debug, Clone)]
-pub struct WorldMetadata {
+pub struct Metadata {
 	pub version: i32,
 	pub file_type: FileType,
 	pub revision: u32,
@@ -92,7 +97,7 @@ pub struct WorldMetadata {
 const BG_COUNT: usize = 13;
 
 #[derive(Debug, Clone)]
-pub struct WorldHeader {
+pub struct Header {
 	pub name: String,
 	pub seed_text: String,
 	pub worldgen_version: u64,
@@ -256,27 +261,87 @@ pub struct WorldHeader {
 }
 
 #[derive(Debug, Clone)]
-pub struct WorldFormat {
+pub struct Format {
 	pub importance: Vec<bool>,
 	pub positions: Vec<i32>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct WorldTile {
+const WALL_COUNT: u16 = 347; // WallID.Count
+
+#[derive(Debug, Clone)]
+pub struct Tile {
+	pub header: [u8; 4], // remove this later
+	pub id: i16, // https://terraria.fandom.com/wiki/Tile_IDs
 	pub active: bool,
-	pub block: u16,
 	pub frame_x: i16,
 	pub frame_y: i16,
 	pub color: u8,
-	pub wall: u8,
-	pub wall_color: u8,
-	pub liquid: u8, // Water, Lava, Honey, Shimmer
+	pub wall: u16,
+	pub wall_color: u16,
+	pub liquid: u8, // 0: Water, 1: Lava, 2: Honey, 3: Shimmer
+	pub liquid_header: u8,
+	pub wire_1: bool,
+	pub wire_2: bool,
+	pub wire_3: bool,
+	pub wire_4: bool,
+	pub actuator: bool,
+	pub in_active: bool,
+	pub invisible_block: bool,
+	pub invisible_wall: bool,
+	pub fullbright_block: bool,
+	pub fullbright_wall: bool,
+	pub half_brick: bool,
+	pub slope: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct Chest {
+	pub x: i32,
+	pub y: i32,
+	pub name: String,
+	pub items: Vec<ChestItem>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ChestItem {
+	pub id: i32,
+	pub stack: i16,
+	pub prefix: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct Sign {
+	pub x: i32,
+	pub y: i32,
+	pub text: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct NPC {
+	pub id: i32,
+	pub name: String,
+	pub x: f32,
+	pub y: f32,
+	pub homeless: bool,
+	pub shimmer: bool,
+	pub home_x: i32,
+	pub home_y: i32,
+	pub variation: i32,
+	pub position: Option<Vector2>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Entity {
+	pub id: i32,
+	pub x: i16,
+	pub y: i16,
+	pub entity: EntityExtra,
 }
 
 impl World {
 	pub fn from_file(path: &Path) -> Result<World, WorldParseError> {
 		let contents = fs::read(path).map_err(WorldParseError::FSError)?;
-		let mut reader = SafeReader::new(contents.as_slice());
+		let mut reader = SafeReader::new(contents);
 		let mut world = Self::from_reader(&mut reader)?;
 
 		if world.metadata.version < 141 {
@@ -303,15 +368,54 @@ impl World {
 		r.seek(0);
 		let metadata = Self::read_metadata(r)?;
 		let format = Self::read_format(r)?;
-		let header = Self::read_header(r, metadata.version)?;
-		if r.get_cur() != format.positions[1] as usize {
-			return Err(WorldParseError::PositionCheckFailed)
+		if r.get_cur() != format.positions[0] as usize {
+			return Err(WorldParseError::PositionCheckFailed("format".to_owned()))
 		}
 
-		Ok(World { metadata, format, header })
+		let header = Self::read_header(r, &metadata)?;
+		if r.get_cur() != format.positions[1] as usize {
+			return Err(WorldParseError::PositionCheckFailed("header".to_owned()))
+		}
+
+		let tiles = Self::read_tiles(r, &format, &header)?;
+		if r.get_cur() != format.positions[2] as usize {
+			return Err(WorldParseError::PositionCheckFailed("tiles".to_owned()))
+		}
+
+		let chests = Self::read_chests(r)?;
+		if r.get_cur() != format.positions[3] as usize {
+			return Err(WorldParseError::PositionCheckFailed("chests".to_owned()))
+		}
+
+		let signs = Self::read_signs(r, &tiles)?;
+		if r.get_cur() != format.positions[4] as usize {
+			return Err(WorldParseError::PositionCheckFailed("signs".to_owned()))
+		}
+
+		let npcs = Self::read_npcs(r, &metadata)?;
+		if r.get_cur() != format.positions[5] as usize {
+			return Err(WorldParseError::PositionCheckFailed("npcs".to_owned()))
+		}
+
+		let version = metadata.version;
+		let entities = if version >= 116 {
+			let te = if version >= 122 {
+				Self::read_entities(r)?
+			} else {
+				todo!("implement WorldFile.LoadDummies for older versions")
+			};
+
+			if r.get_cur() != format.positions[6] as usize {
+				return Err(WorldParseError::PositionCheckFailed("entities".to_owned()))
+			}
+
+			te
+		} else { vec![] };
+
+		Ok(World { metadata, format, header, tiles, chests, signs, npcs, entities })
 	}
 
-	pub fn read_metadata(r: &mut SafeReader) -> Result<WorldMetadata, WorldParseError> {
+	pub fn read_metadata(r: &mut SafeReader) -> Result<Metadata, WorldParseError> {
 		let version = r.read_i32()?;
 		let (file_type, revision, favorite) = if version >= 135 {
 			let magic = r.read_bytes(7)?;
@@ -332,7 +436,7 @@ impl World {
 			return Err(WorldParseError::UnsupportedVersion(version))
 		}
 
-		Ok(WorldMetadata {
+		Ok(Metadata {
 			version,
 			file_type,
 			revision,
@@ -340,7 +444,7 @@ impl World {
 		})
 	}
 
-	pub fn read_format(r: &mut SafeReader) -> Result<WorldFormat, WorldParseError> {
+	pub fn read_format(r: &mut SafeReader) -> Result<Format, WorldParseError> {
 		let mut positions = vec![0; r.read_i16()? as usize];
 		for p in &mut positions {
 			*p = r.read_i32()?;
@@ -362,10 +466,11 @@ impl World {
 			}
 		}
 
-		Ok(WorldFormat { positions, importance })
+		Ok(Format { positions, importance })
 	}
 
-	pub fn read_header(r: &mut SafeReader, version: i32) -> Result<WorldHeader, WorldParseError> {
+	pub fn read_header(r: &mut SafeReader, metadata: &Metadata) -> Result<Header, WorldParseError> {
+		let version = metadata.version;
 		let name = r.read_string()?;
 		let (seed_text, worldgen_version) = if version >= 179 {
 			(
@@ -607,7 +712,7 @@ impl World {
 		let fast_forward_time_to_dusk = version >= 264 && r.read_bool()?;
 		let moondial_cooldown = if version >= 264 { r.read_byte()? } else { 0 };
 
-		Ok(WorldHeader {
+		Ok(Header {
 			name,
 			seed_text,
 			worldgen_version,
@@ -771,26 +876,120 @@ impl World {
 		})
 	}
 
-	pub fn read_tiles(r: &mut SafeReader, format: &WorldFormat, header: &WorldHeader) -> Result<Vec<Vec<WorldTile>>, WorldParseError> {
+	pub fn read_tiles(r: &mut SafeReader, format: &Format, header: &Header) -> Result<Vec<Vec<Tile>>, WorldParseError> {
 		let mut map = Vec::with_capacity(header.width as usize);
-		for x in 0..header.width {
+		for _ in 0..header.width {
 			let mut column = Vec::with_capacity(header.height as usize);
-			for y in 0..header.height {
-				let b_0 = r.read_byte()?;
-				let mut b_1 = 0;
-				let mut b_2 = 0;
-				let mut b_3 = 0;
-				if b_0 & 1 == 1 {
-					b_1 = r.read_byte()?;
-					if b_1 & 1 == 1 {
-						b_2 = r.read_byte()?;
-						if b_2 & 1 == 1 {
-							b_3 = r.read_byte()?;
+			let mut y = 0;
+			while y < header.height {
+				// Header bytes
+				let b_1 = r.read_byte()?;
+				let b_2 = if b_1 & 1 == 1 { r.read_byte()? } else { 0 };
+				let b_3 = if b_2 & 1 == 1 { r.read_byte()? } else { 0 };
+				let b_4 = if b_3 & 1 == 1 { r.read_byte()? } else { 0 };
+
+				let (active, id, frame_x, frame_y, color) = if b_1 & 2 == 2 {
+					let id = if b_1 & 32 == 32 {
+						r.read_i16()?
+					} else {
+						r.read_byte()? as i16
+					};
+
+					let (x, y) = if format.importance[id as usize] {
+						let x = r.read_i16()?;
+						let y = r.read_i16()?;
+						(x, if id == 144 { 0 } else { y })
+					} else { (-1, -1) };
+
+					let col = if b_3 & 8 == 8 { r.read_byte()? } else { 0 };
+
+					(true, id, x, y, col)
+				} else {
+					(false, -1, 0, 0, 0)
+				};
+
+				let (wall, wall_color) = if b_1 & 4 == 4 {
+					(r.read_byte()? as u16, if b_3 & 16 == 16 { r.read_byte()? as u16 } else { 0 })
+				} else { (0, 0) };
+
+				let liquid_bits = (b_1 & 0b11000) >> 3;
+				let (liquid, liquid_header) = if liquid_bits != 0 {
+					let liquid_header = r.read_byte()?;
+					(if b_3 & 128 == 128 {
+						3 // shimmer
+					} else {
+						match liquid_bits {
+							2 => 1, // lava
+							3 => 2, // honey
+							_ => 0, // water?
 						}
-					}
+					}, liquid_header)
+				} else {
+					(0, 0)
+				};
+
+				let (wire_1, wire_2, wire_3, half_brick, slope) = if b_2 > 1 {
+					let n_9 = (b_2 & 0b1110000) >> 4;
+					// todo: add check for Main.tileSolid[(int) tile.type] || TileID.Sets.NonSolidSaveSlopes[(int) tile.type])
+					let (hb, sl) = if n_9 != 0 {
+						(n_9 == 1, n_9 - 1)
+					} else { (false, 0) };
+					(b_2 & 2 == 2, b_2 & 4 == 4, b_2 & 8 == 8, hb, sl)
+				} else { (false, false, false, false, 0) };
+
+				let (actuator, in_active, wire_4, wall) = if b_3 > 1 {
+					let wall_extended = if b_3 & 64 == 64 {
+						let new_wall = (r.read_byte()? as u16) << 8 | wall;
+						if new_wall < WALL_COUNT {
+							new_wall
+						} else {
+							0
+						}
+					} else { wall };
+					(b_3 & 2 == 2, b_3 & 4 == 4, b_3 & 32 == 32, wall_extended)
+				} else { (false, false, false, wall) };
+
+				let (invisible_block, invisible_wall, fullbright_block, fullbright_wall) = if b_4 > 1 {
+					(b_4 & 2 == 2, b_4 & 4 == 4, b_4 & 8 == 8, b_4 & 16 == 16)
+				} else { (false, false, false, false) };
+
+				let tile = Tile{
+					header: [b_1, b_2, b_3, b_4],
+					id,
+					active,
+					frame_x,
+					frame_y,
+					color,
+					wall,
+					wall_color,
+					liquid,
+					liquid_header,
+					wire_1,
+					wire_2,
+					wire_3,
+					wire_4,
+					actuator,
+					in_active,
+					invisible_block,
+					invisible_wall,
+					fullbright_block,
+					fullbright_wall,
+					half_brick,
+					slope,
+    		};
+
+				let repeat = match (b_1 & 0b11000000) >> 6 {
+					0 => 0,
+					1 => r.read_byte()? as i32,
+					_ => r.read_i16()? as i32,
+				};
+
+				for _ in 0..repeat {
+					column.push(tile.clone());
 				}
+				column.push(tile);
 
-
+				y += repeat + 1;
 			}
 
 			map.push(column);
@@ -798,5 +997,221 @@ impl World {
 
 		Ok(map)
 	}
+
+	pub fn read_chests(r: &mut SafeReader) -> Result<Vec<Chest>, WorldParseError> {
+		let mut chests = Vec::with_capacity(r.read_i16()? as usize);
+
+		let n_2 = r.read_i16()?;
+		let n_3 = if n_2 < 40 { n_2 } else { 40 };
+		let n_4 = if n_2 < 40 { 0 } else { n_2 - 40 };
+
+		for _ in 0..chests.capacity() {
+			let x = r.read_i32()?;
+			let y = r.read_i32()?;
+			let name = r.read_string()?;
+			let mut items = Vec::with_capacity(n_3 as usize);
+			for _ in 0..items.capacity() {
+				let stack = r.read_i16()?;
+				let item = if stack == 0 { ChestItem::default() } else {
+					ChestItem {
+						id: r.read_i32()?,
+						stack: if stack > 0 { stack } else { 1 },
+						prefix: r.read_byte()?,
+					}
+				};
+				items.push(item)
+			}
+
+			for _ in 0..n_4 {
+				if r.read_i16()? > 0 {
+					r.skip(5)
+				}
+			}
+
+			chests.push(Chest {
+				x,
+				y,
+				name,
+				items,
+			})
+		}
+
+		Ok(chests)
+	}
+
+	pub fn read_signs(r: &mut SafeReader, tiles: &[Vec<Tile>]) -> Result<Vec<Sign>, WorldParseError> {
+		// fs::write("./out.txt", r.read_bytes(100)?).unwrap();
+		let mut signs = Vec::with_capacity(r.read_i16()? as usize);
+	
+		for _ in 0..signs.capacity() {
+			let text = r.read_string()?;
+			let x = r.read_i32()?;
+			let y = r.read_i32()?;
+
+			let t = &tiles[x as usize][y as usize];
+			// IDs from Main.tileSign; todo: automate these
+			if t.active && (t.id == 55 || t.id == 85 || t.id == 425 || t.id == 573) {
+				signs.push(Sign { x, y, text })
+			}
+		}
+
+		Ok(signs)
+	}
+
+	pub fn read_npcs(r: &mut SafeReader, metadata: &Metadata) -> Result<Vec<NPC>, WorldParseError> {
+		let version = metadata.version;
+		let mut shimmers = HashSet::new();
+		if version >= 268 {
+			for _ in 0..r.read_i32()? {
+				shimmers.insert(r.read_i32()?);
+			}
+		}
+
+		let mut npcs = vec![];
+
+		while r.read_bool()? {
+			let id = if version >= 190 {
+				r.read_i32()?
+			} else {
+				todo!("implement NPCID.FromLegacyName(reader.ReadString())")
+			};
+
+			let name = r.read_string()?;
+			let x = r.read_f32()?;
+			let y = r.read_f32()?;
+			let homeless = r.read_bool()?;
+			let home_x = r.read_i32()?;
+			let home_y = r.read_i32()?;
+			let variation = if version >= 213 && r.read_byte()? & 1 == 1 { r.read_i32()? } else { 0 };
+
+			npcs.push(NPC { id, name, x, y, homeless, home_x, home_y, variation, shimmer: shimmers.contains(&id), position: None })
+		}
+
+		if version >= 140 {
+			let mut iter = npcs.iter_mut();
+			while r.read_bool()? {
+				let Some(npc) = iter.next() else { break };
+				if version >= 190 {
+					npc.id = r.read_i32()?;
+				} else {
+					todo!("implement NPCID.FromLegacyName(reader.ReadString())")
+				}
+
+				npc.position = Some(r.read_vector2()?)
+			}
+		}
+
+		Ok(npcs)
+	}
+
+	pub fn read_entities(r: &mut SafeReader) -> Result<Vec<Entity>, WorldParseError> {
+		let mut entities = Vec::with_capacity(r.read_i32()? as usize);
+		for _ in 0..entities.capacity() {
+			let entity_type = r.read_byte()?;
+			let id = r.read_i32()?;
+			let x = r.read_i16()?;
+			let y = r.read_i16()?;
+
+			let entity = match entity_type {
+				0 => EntityExtra::Dummy { npc: r.read_i16()? },
+				1 => EntityExtra::ItemFrame(EntityItem { id: r.read_i16()?, prefix: r.read_byte()?, stack: r.read_i16()? }),
+				2 => EntityExtra::LogicSensor { logic_check: r.read_byte()?, on: r.read_bool()? },
+				3 => {
+					let mut doll = DisplayDoll::default();
+					let mut item_flags = r.read_byte()?;
+					let mut dye_flags = r.read_byte()?;
+
+					for item in doll.items.iter_mut() {
+						if item_flags & 1 == 1 {
+							item.id = r.read_i16()?;
+							item.prefix = r.read_byte()?;
+							item.stack = r.read_i16()?;
+						}
+						item_flags >>= 1;
+					};
+
+					for item in doll.dyes.iter_mut() {
+						if dye_flags & 1 == 1 {
+							item.id = r.read_i16()?;
+							item.prefix = r.read_byte()?;
+							item.stack = r.read_i16()?;
+						}
+						dye_flags >>= 1;
+					};
+
+					EntityExtra::DisplayDoll(doll)
+				}
+				4 => EntityExtra::WeaponsRack(EntityItem { id: r.read_i16()?, prefix: r.read_byte()?, stack: r.read_i16()? }),
+				5 => {
+					let mut rack = HatRack::default();
+					let mut flags = r.read_byte()?;
+
+					for item in rack.items.iter_mut() {
+						if flags & 1 == 1 {
+							item.id = r.read_i16()?;
+							item.prefix = r.read_byte()?;
+							item.stack = r.read_i16()?;
+						}
+						flags >>= 1;
+					};
+
+
+					for item in rack.dyes.iter_mut() {
+						if flags & 1 == 1 {
+							item.id = r.read_i16()?;
+							item.prefix = r.read_byte()?;
+							item.stack = r.read_i16()?;
+						}
+						flags >>= 1;
+					};
+
+					EntityExtra::HatRack(rack)
+				}
+				6 => EntityExtra::FoodPlatter(EntityItem { id: r.read_i16()?, prefix: r.read_byte()?, stack: r.read_i16()? }),
+				7 => EntityExtra::TeleportationPylon,
+				_ => { continue; },
+			};
+
+			entities.push(Entity { id, x, y, entity })
+		}
+
+		Ok(entities)
+	}
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DisplayDoll {
+	items: [EntityItem; 8],
+	dyes: [EntityItem; 8],
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HatRack {
+	items: [EntityItem; 2],
+	dyes: [EntityItem; 2],
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EntityItem {
+	pub id: i16,
+	pub stack: i16,
+	pub prefix: u8,
+}
+
+#[derive(Debug, Clone)]
+pub enum EntityExtra {
+	Dummy {
+		npc: i16,
+	},
+	ItemFrame(EntityItem),
+	LogicSensor {
+		logic_check: u8,
+		on: bool,
+	},
+	DisplayDoll(DisplayDoll),
+	WeaponsRack(EntityItem),
+	HatRack(HatRack),
+	FoodPlatter(EntityItem),
+	TeleportationPylon,
 }
 

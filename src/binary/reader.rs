@@ -52,8 +52,20 @@ impl<'a> Reader<'a> {
 		i64::from_le_bytes(self.read_bytes(8).try_into().unwrap())
 	}
 
+	pub fn read_length(&mut self) -> usize {
+		let mut length = self.read_byte() as usize;
+		let mut shift = 7;
+		while length & (1 << shift) != 0 {
+			length &= !(1 << shift);
+			length |= (self.read_byte() as usize) << shift;
+			shift += 7;
+		}
+
+		length
+	}
+
 	pub fn read_string(&mut self) -> String {
-		let length = self.read_byte() as usize;
+		let length = self.read_length();
 		std::str::from_utf8(self.read_bytes(length)).unwrap_or("").to_string()
 	}
 

@@ -59,9 +59,18 @@ impl Writer {
 		self.write_bytes(&num.to_le_bytes())
 	}
 
+	pub fn write_length(mut self, mut len: usize) -> Self {
+		while len >= (1 << 7) {
+			self = self.write_byte((len & 0b1111111) as u8 | (1 << 7));
+			len >>= 7; // shift the whole thing by seven
+		}
+
+		self.write_byte(len as u8)
+	}
+
 	pub fn write_string(self, string: String) -> Self {
 		self
-			.write_byte(string.len() as u8)
+			.write_length(string.len())
 			.write_bytes(string.as_bytes())
 			.write_byte(0)
 	}

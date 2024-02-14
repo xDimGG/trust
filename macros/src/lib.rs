@@ -15,7 +15,11 @@ pub fn message_encoder_decoder(_: TokenStream, input: TokenStream) -> TokenStrea
 
 	for variant in input.variants {
 		if let Fields::Named(fields) = variant.fields {
-			let fields = fields.named.iter();
+			let fields = fields.named.iter().map(|e| {
+				let ident = &e.ident;
+				let ty = &e.ty;
+				quote!{ pub #ident: #ty }
+			});
 			let name = variant.ident;
 			structs.push(quote! {
 				#[derive(Debug, Clone)]

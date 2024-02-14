@@ -1,9 +1,11 @@
 #[derive(Debug, Clone)]
-#[allow(clippy::upper_case_acronyms)]
 pub struct RGB (pub u8, pub u8, pub u8);
 
 #[derive(Debug, Clone)]
 pub struct Text (pub TextMode, pub String);
+
+#[derive(Debug, Clone)]
+pub struct Vector2 (pub f32, pub f32);
 
 #[derive(Debug, Clone)]
 #[repr(u8)]

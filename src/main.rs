@@ -1,3 +1,5 @@
+#![allow(clippy::upper_case_acronyms)]
+
 mod binary;
 mod network;
 mod world;
@@ -11,8 +13,8 @@ use world::World;
 
 #[tokio::main]
 async fn main() {
-	let srv = Server::new("password");
-	srv.listen("127.0.0.1:7777").await.unwrap();
+	// let srv = Server::new("password");
+	// srv.listen("127.0.0.1:7777").await.unwrap();
 
 	// let Some(user_dirs) = UserDirs::new() else {
 	// 	panic!("couldn't find user dir")
@@ -25,8 +27,8 @@ async fn main() {
 	// let world_dir = doc_dir.join("My Games").join("Terraria").join("Worlds");
 	// let world_files = fs::read_dir(world_dir).unwrap();
 
-	match World::from_file(Path::new("C:\\Users\\Dim\\Documents\\My Games\\Terraria\\Worlds\\dim.wld")) {
-		Ok(w) => { dbg!(w); }
+	match World::from_file(Path::new("C:\\Users\\Dim\\Documents\\My Games\\Terraria\\Worlds\\college_is_easy.wld")) {
+		Ok(w) => { dbg!(&w.entities); }
 		Err(e) => { println!("Parse Error: {}", e); }
 	};
 }
