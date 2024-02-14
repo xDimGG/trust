@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use proc_macro2::{Ident, TokenStream as TokenStream2};
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, spanned::Spanned, Field, Fields, ItemEnum, Type};
 
@@ -111,10 +111,12 @@ fn type_to_read_method(s: &str) -> TokenStream2 {
 		"i32" => quote! { r.read_i32() },
 		"u64" => quote! { r.read_u64() },
 		"i64" => quote! { r.read_i64() },
+		"f32" => quote! { r.read_f32() },
+		"f64" => quote! { r.read_f64() },
 		"String" => quote! { r.read_string() },
 		"Text" => quote! { r.read_text() },
 		"RGB" => quote! { r.read_rgb() },
-		ty => quote! { compile_error!("Unsupported type: {}", #ty) },
+		ty => quote! { compile_error!(format!("Unsupported type: {}", #ty)) },
 	}
 }
 
@@ -231,10 +233,12 @@ fn type_to_write_method(s: &str, arg: TokenStream2) -> TokenStream2 {
 		"i32" => quote! { w.write_i32(#arg) },
 		"u64" => quote! { w.write_u64(#arg) },
 		"i64" => quote! { w.write_i64(#arg) },
+		"f32" => quote! { w.write_f32(#arg) },
+		"f64" => quote! { w.write_f64(#arg) },
 		"String" => quote! { w.write_string(#arg) },
 		"Text" => quote! { w.write_text(#arg) },
 		"RGB" => quote! { w.write_rgb(#arg) },
-		ty => quote! { compile_error!("Unsupported type: {}", #ty) },
+		_ => quote! { compile_error!("Unsupported type") },
 	}
 }
 

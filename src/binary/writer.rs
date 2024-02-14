@@ -57,6 +57,14 @@ impl Writer {
 		self.write_bytes(&num.to_le_bytes())
 	}
 
+	pub fn write_f32(&mut self, num: f32) {
+		self.write_bytes(&num.to_le_bytes())
+	}
+
+	pub fn write_f64(&mut self, num: f64) {
+		self.write_bytes(&num.to_le_bytes())
+	}
+
 	pub fn write_length(&mut self, mut len: usize) {
 		while len >= (1 << 7) {
 			self.write_byte((len & 0b1111111) as u8 | (1 << 7));

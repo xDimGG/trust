@@ -6,9 +6,10 @@ use tokio::sync::{Mutex, RwLock, broadcast};
 use tokio::select;
 use std::sync::Arc;
 
-use crate::network::messages::{self, Sanitize, Message, ConnectionApprove};
+use crate::network::messages::{self, Sanitize, Message, ConnectionApprove, WorldHeader};
 use crate::binary::types::{Text, TextMode};
 use crate::world::types::World;
+use crate::network::utils::flags;
 
 const GAME_VERSION: &str = "Terraria279";
 const MAX_CLIENTS: usize = 256;
@@ -67,7 +68,6 @@ impl Server {
 		// https://github.com/rust-lang/rust/issues/44796#issuecomment-967747810
 		const INIT_CLIENT_NONE: Option<Client> = None;
     let (tx, _) = broadcast::channel(1024);
-
 
 		Server {
 			world: RwLock::new(world),
@@ -250,6 +250,9 @@ impl Server {
 				}
 				Ok(None)
 			}
+			Message::WorldRequest => {
+				Ok(Some(Message::WorldHeader(self.get_world_header().await)))
+			}
 			Message::Unknown(code, buf) => {
 				println!("Unknown ({}): {:?}", code, buf);
 				Ok(None)
@@ -260,4 +263,119 @@ impl Server {
 			}
 		}
 	}
+
+	async fn get_world_header(&self) -> WorldHeader {
+		let h = self.world.read().await.header;
+
+		WorldHeader {
+			time: 0,
+			time_flags: flags( h.temp_day_time, h.temp_blood_moon, h.temp_eclipse, false, false, false, false, false),
+			moon_phase: h.temp_moon_phase as u8,
+			width: h.width as i16,
+			height: h.height as i16,
+			spawn_x: h.spawn_tile_x as i16,
+			spawn_y: h.spawn_tile_y as i16,
+			world_surface: h.world_surface as i16,
+			rock_layer: h.rock_layer as i16,
+			id: h.id,
+			name: h.name,
+			game_mode: h.game_mode as u8,
+			uuid: h.uuid.unwrap(),
+			worldgen_version: h.worldgen_version,
+			moon_type: h.moon_type as u8,
+			bg_0: h.bg[0],
+			bg_10: h.bg[10],
+			bg_11: h.bg[11],
+			bg_12: h.bg[12],
+			bg_1: h.bg[1],
+			bg_2: h.bg[2],
+			bg_3: h.bg[3],
+			bg_4: h.bg[4],
+			bg_5: h.bg[5],
+			bg_6: h.bg[6],
+			bg_7: h.bg[7],
+			bg_8: h.bg[8],
+			bg_9: h.bg[9],
+			ice_back_style: h.ice_back_style as u8,
+			jungle_back_style: h.jungle_back_style as u8,
+			hell_back_style: h.hell_back_style as u8,
+			wind_speed_target: h.wind_speed_target,
+			num_clouds: h.num_clouds as u8,
+			tree_x: h.tree_x,
+			tree_style: h.tree_style.iter().map(|n| *n as u8),
+			cave_back_x: h.cave_back_x,
+			cave_back_style: [i32; 4],
+			tree_top_variations: [i32; AREA_ID_COUNT],
+			max_raining: f32,
+			flags: [u8; 10],
+			sundial_cooldown: u8,
+			moondial_cooldown: u8,
+			ore_tier_copper: i16,
+			ore_tier_iron: i16,
+			ore_tier_silver: i16,
+			ore_tier_gold: i16,
+			ore_tier_cobalt: i16,
+			ore_tier_mythril: i16,
+			ore_tier_adamantite: i16,
+			invasion_type: i8,
+			lobby_id: u64,
+			sandstorm_intended_severity: f32,
+		}
+	}
 }
+
+
+// pub struct WorldHeader {
+// 	pub time: i32,
+// 	pub time_flags: u8,
+// 	pub moon_phase: u8,
+// 	pub width: i16,
+// 	pub height: i16,
+// 	pub spawn_x: i16,
+// 	pub spawn_y: i16,
+// 	pub world_surface: i16,
+// 	pub rock_layer: i16,
+// 	pub id: i32,
+// 	pub name: String,
+// 	pub game_mode: u8,
+// 	pub uuid: [u8; 16],
+// 	pub worldgen_version: u64,
+// 	pub moon_type: u8,
+// 	pub bg_0: u8,
+// 	pub bg_10: u8,
+// 	pub bg_11: u8,
+// 	pub bg_12: u8,
+// 	pub bg_1: u8,
+// 	pub bg_2: u8,
+// 	pub bg_3: u8,
+// 	pub bg_4: u8,
+// 	pub bg_5: u8,
+// 	pub bg_6: u8,
+// 	pub bg_7: u8,
+// 	pub bg_8: u8,
+// 	pub bg_9: u8,
+// 	pub ice_back_style: u8,
+// 	pub jungle_back_style: u8,
+// 	pub hell_back_style: u8,
+// 	pub wind_speed_target: f32,
+// 	pub num_clouds: u8,
+// 	pub tree_x: [i32; 3],
+// 	pub tree_style: [i32; 4],
+// 	pub cave_back_x: [i32; 3],
+// 	pub cave_back_style: [i32; 4],
+// 	pub tree_top_variations: [i32; AREA_ID_COUNT],
+// 	pub max_raining: f32,
+// 	pub flags: [u8; 10],
+// 	pub sundial_cooldown: u8,
+// 	pub moondial_cooldown: u8,
+// 	pub ore_tier_copper: i16,
+// 	pub ore_tier_iron: i16,
+// 	pub ore_tier_silver: i16,
+// 	pub ore_tier_gold: i16,
+// 	pub ore_tier_cobalt: i16,
+// 	pub ore_tier_mythril: i16,
+// 	pub ore_tier_adamantite: i16,
+// 	pub invasion_type: i8,
+// 	pub lobby_id: u64,
+// 	pub sandstorm_intended_severity: f32,
+// }

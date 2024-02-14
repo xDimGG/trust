@@ -2,7 +2,6 @@ use macros::message_encoder_decoder;
 use crate::binary::types::{RGB, Text};
 use crate::binary::writer::Writer;
 use crate::binary::reader::Reader;
-use crate::world::types::{GameMode, BG_COUNT};
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
@@ -65,6 +64,7 @@ impl Sanitize for PlayerInventorySlot {
 }
 
 const MAX_BUFFS: usize = 44; // from Player.maxBuffs
+const AREA_ID_COUNT: usize = 13; // from TreeTopsInfo.AreaId.Count
 
 #[message_encoder_decoder]
 pub enum Message<'a> {
@@ -146,8 +146,43 @@ pub enum Message<'a> {
 		uuid: [u8; 16],
 		worldgen_version: u64,
 		moon_type: u8,
-		bg: [u8; BG_COUNT],
-		// ice_back_style: []
+		bg_0: u8,
+		bg_10: u8,
+		bg_11: u8,
+		bg_12: u8,
+		bg_1: u8,
+		bg_2: u8,
+		bg_3: u8,
+		bg_4: u8,
+		bg_5: u8,
+		bg_6: u8,
+		bg_7: u8,
+		bg_8: u8,
+		bg_9: u8,
+		ice_back_style: u8,
+		jungle_back_style: u8,
+		hell_back_style: u8,
+		wind_speed_target: f32,
+		num_clouds: u8,
+		tree_x: [i32; 3],
+		tree_style: [u8; 4],
+		cave_back_x: [i32; 3],
+		cave_back_style: [u8; 4],
+		tree_top_variations: [i32; AREA_ID_COUNT],
+		max_raining: f32,
+		flags: [u8; 10],
+		sundial_cooldown: u8,
+		moondial_cooldown: u8,
+		ore_tier_copper: i16,
+		ore_tier_iron: i16,
+		ore_tier_silver: i16,
+		ore_tier_gold: i16,
+		ore_tier_cobalt: i16,
+		ore_tier_mythril: i16,
+		ore_tier_adamantite: i16,
+		invasion_type: i8,
+		lobby_id: u64,
+		sandstorm_intended_severity: f32,
 	},
 	/// 8 <-
 	SpawnRequest {

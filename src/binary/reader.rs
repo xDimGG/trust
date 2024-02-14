@@ -52,6 +52,14 @@ impl<'a> Reader<'a> {
 		i64::from_le_bytes(self.read_bytes(8).try_into().unwrap())
 	}
 
+	pub fn read_f32(&mut self) -> f32 {
+		f32::from_le_bytes(self.read_bytes(4).try_into().unwrap())
+	}
+
+	pub fn read_f64(&mut self) -> f64 {
+		f64::from_le_bytes(self.read_bytes(8).try_into().unwrap())
+	}
+
 	pub fn read_length(&mut self) -> usize {
 		let mut length = self.read_byte() as usize;
 		let mut shift = 7;
