@@ -1,5 +1,5 @@
 use crate::binary::types::{Text, RGB, Vector2};
-use crate::world::WorldParseError;
+use crate::world::types::WorldParseError;
 
 pub struct SafeReader {
 	buf: Vec<u8>,

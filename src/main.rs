@@ -9,7 +9,7 @@ use directories::UserDirs;
 
 use std::{fs, path::Path};
 
-use world::World;
+use world::types::World;
 
 #[tokio::main]
 async fn main() {
