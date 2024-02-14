@@ -53,6 +53,7 @@ pub enum WorldParseError {
 	InvalidNumber,
 	BadFileSignature,
 	ExpectedWorldType,
+	InvalidFooter,
 	InvalidString(Utf8Error),
 	PositionCheckFailed(String),
 	UnsupportedVersion(i32),
@@ -67,6 +68,7 @@ impl fmt::Display for WorldParseError {
 			Self::InvalidString(err) => write!(f, "Could not parse string, got {}", err),
 			Self::BadFileSignature => write!(f, "Invalid file signature (expecting \"{}\")", str::from_utf8(MAGIC_STRING).unwrap()),
 			Self::ExpectedWorldType => write!(f, "Expected file type to be world file"),
+			Self::InvalidFooter => write!(f, "Footer of file does not match header"),
 			Self::PositionCheckFailed(s) => write!(f, "Position of buffer cursor does not match metadata position for field {}", s),
 			Self::UnsupportedVersion(v) => write!(f, "Unsupported file version: {}", v),
 			Self::FSError(err) => write!(f, "{}", err),
@@ -84,6 +86,10 @@ pub struct World {
 	pub signs: Vec<Sign>,
 	pub npcs: Vec<NPC>,
 	pub entities: Vec<Entity>,
+	pub weighted_pressure_plates: Vec<WeightedPressurePlate>,
+	pub room_locations: Vec<RoomLocation>,
+	pub bestiary: Bestiary,
+	pub creative_powers: Vec<CreativePower>,
 }
 
 #[derive(Debug, Clone)]
@@ -338,6 +344,81 @@ pub struct Entity {
 	pub entity: EntityExtra,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct DisplayDoll {
+	pub items: [EntityItem; 8],
+	pub dyes: [EntityItem; 8],
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HatRack {
+	pub items: [EntityItem; 2],
+	pub dyes: [EntityItem; 2],
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EntityItem {
+	pub id: i16,
+	pub stack: i16,
+	pub prefix: u8,
+}
+
+#[derive(Debug, Clone)]
+pub enum EntityExtra {
+	Dummy {
+		npc: i16,
+	},
+	ItemFrame(EntityItem),
+	LogicSensor {
+		logic_check: u8,
+		on: bool,
+	},
+	DisplayDoll(DisplayDoll),
+	WeaponsRack(EntityItem),
+	HatRack(HatRack),
+	FoodPlatter(EntityItem),
+	TeleportationPylon,
+}
+
+#[derive(Debug, Clone)]
+pub struct WeightedPressurePlate {
+	pub x: i32,
+	pub y: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct RoomLocation {
+	pub id: i32,
+	pub x: i32,
+	pub y: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct Bestiary {
+	pub kills: Vec<(String, i32)>, // npc id, kill count pair
+	pub sights: Vec<String>, // npc IDs
+	pub chats: Vec<String>, // npc IDs
+}
+
+#[derive(Debug, Clone)]
+pub enum CreativePower {
+	FreezeTime(bool),
+	StartDayImmediately,
+	StartNoonImmediately,
+	StartNightImmediately,
+	StartMidnightImmediately,
+	GodmodePower,
+	ModifyWindDirectionAndStrength,
+	ModifyRainPower,
+	ModifyTimeRate(f32),
+	FreezeRainPower(bool),
+	FreezeWindDirectionAndStrength(bool),
+	FarPlacementRangePower,
+	DifficultySliderPower(f32),
+	StopBiomeSpreadPower(bool),
+	SpawnRateSliderPerPlayerPower,
+}
+
 impl World {
 	pub fn from_file(path: &Path) -> Result<World, WorldParseError> {
 		let contents = fs::read(path).map_err(WorldParseError::FSError)?;
@@ -398,6 +479,7 @@ impl World {
 		}
 
 		let version = metadata.version;
+
 		let entities = if version >= 116 {
 			let te = if version >= 122 {
 				Self::read_entities(r)?
@@ -412,7 +494,47 @@ impl World {
 			te
 		} else { vec![] };
 
-		Ok(World { metadata, format, header, tiles, chests, signs, npcs, entities })
+		let weighted_pressure_plates = if version >= 170 {
+			let wpp = Self::read_weighted_pressure_plates(r)?;
+			if r.get_cur() != format.positions[7] as usize {
+				return Err(WorldParseError::PositionCheckFailed("weighted_pressure_plates".to_owned()))
+			}
+
+			wpp
+		} else { vec![] };
+
+		let room_locations = if version >= 189 {
+			let rl = Self::read_room_locations(r)?;
+			if r.get_cur() != format.positions[8] as usize {
+				return Err(WorldParseError::PositionCheckFailed("room_locations".to_owned()))
+			}
+
+			rl
+		} else { vec![] };
+
+		let bestiary = if version >= 210 {
+			let be = Self::read_bestiary(r)?;
+			if r.get_cur() != format.positions[9] as usize {
+				return Err(WorldParseError::PositionCheckFailed("bestiary".to_owned()))
+			}
+
+			be
+		} else { todo!("WorldFile.LoadBestiaryForVersionsBefore210()") };
+
+		let creative_powers = if version >= 220 {
+			let be = Self::read_creative_powers(r)?;
+			if r.get_cur() != format.positions[10] as usize {
+				return Err(WorldParseError::PositionCheckFailed("creative_powers".to_owned()))
+			}
+
+			be
+		} else { vec![] };
+
+		if Self::validate_footer(r, &header)? {
+			Ok(World { metadata, format, header, tiles, chests, signs, npcs, entities, weighted_pressure_plates, room_locations, bestiary, creative_powers })
+		} else {
+			Err(WorldParseError::InvalidFooter)
+		}
 	}
 
 	pub fn read_metadata(r: &mut SafeReader) -> Result<Metadata, WorldParseError> {
@@ -1177,41 +1299,79 @@ impl World {
 
 		Ok(entities)
 	}
-}
 
-#[derive(Debug, Clone, Default)]
-pub struct DisplayDoll {
-	items: [EntityItem; 8],
-	dyes: [EntityItem; 8],
-}
+	pub fn read_weighted_pressure_plates(r: &mut SafeReader) -> Result<Vec<WeightedPressurePlate>, WorldParseError> {
+		let mut wpp = Vec::with_capacity(r.read_i32()? as usize);
+		for _ in 0..wpp.capacity() {
+			wpp.push(WeightedPressurePlate {
+				x: r.read_i32()?,
+				y: r.read_i32()?,
+			})
+		}
 
-#[derive(Debug, Clone, Default)]
-pub struct HatRack {
-	items: [EntityItem; 2],
-	dyes: [EntityItem; 2],
-}
+		Ok(wpp)
+	}
 
-#[derive(Debug, Clone, Default)]
-pub struct EntityItem {
-	pub id: i16,
-	pub stack: i16,
-	pub prefix: u8,
-}
+	pub fn read_room_locations(r: &mut SafeReader) -> Result<Vec<RoomLocation>, WorldParseError> {
+		let mut rl = Vec::with_capacity(r.read_i32()? as usize);
+		for _ in 0..rl.capacity() {
+			rl.push(RoomLocation {
+				id: r.read_i32()?,
+				x: r.read_i32()?,
+				y: r.read_i32()?,
+			})
+		}
 
-#[derive(Debug, Clone)]
-pub enum EntityExtra {
-	Dummy {
-		npc: i16,
-	},
-	ItemFrame(EntityItem),
-	LogicSensor {
-		logic_check: u8,
-		on: bool,
-	},
-	DisplayDoll(DisplayDoll),
-	WeaponsRack(EntityItem),
-	HatRack(HatRack),
-	FoodPlatter(EntityItem),
-	TeleportationPylon,
-}
+		Ok(rl)
+	}
 
+	pub fn read_bestiary(r: &mut SafeReader) -> Result<Bestiary, WorldParseError> {
+		let mut kills = Vec::with_capacity(r.read_i32()? as usize);
+		for _ in 0..kills.capacity() {
+			kills.push((r.read_string()?, r.read_i32()?));
+		}
+
+		let mut sights = Vec::with_capacity(r.read_i32()? as usize);
+		for _ in 0..sights.capacity() {
+			sights.push(r.read_string()?);
+		}
+
+		let mut chats = Vec::with_capacity(r.read_i32()? as usize);
+		for _ in 0..chats.capacity() {
+			chats.push(r.read_string()?);
+		}
+
+		Ok(Bestiary { kills, sights, chats })
+	}
+
+	pub fn read_creative_powers(r: &mut SafeReader) -> Result<Vec<CreativePower>, WorldParseError> {
+		let mut powers = vec![];
+		while r.read_bool()? {
+			let power = match r.read_i16()? {
+				0 => CreativePower::FreezeTime(r.read_bool()?),
+				1 => CreativePower::StartDayImmediately,
+				2 => CreativePower::StartNoonImmediately,
+				3 => CreativePower::StartNightImmediately,
+				4 => CreativePower::StartMidnightImmediately,
+				5 => CreativePower::GodmodePower,
+				6 => CreativePower::ModifyWindDirectionAndStrength,
+				7 => CreativePower::ModifyRainPower,
+				8 => CreativePower::ModifyTimeRate(r.read_f32()?),
+				9 => CreativePower::FreezeRainPower(r.read_bool()?),
+				10 => CreativePower::FreezeWindDirectionAndStrength(r.read_bool()?),
+				11 => CreativePower::FarPlacementRangePower,
+				12 => CreativePower::DifficultySliderPower(r.read_f32()?),
+				13 => CreativePower::StopBiomeSpreadPower(r.read_bool()?),
+				14 => CreativePower::SpawnRateSliderPerPlayerPower,
+				_ => { continue; }
+			};
+			powers.push(power);
+		}
+
+		Ok(powers)
+	}
+
+	pub fn validate_footer(r: &mut SafeReader, header: &Header) -> Result<bool, WorldParseError> {
+		Ok(r.read_bool()? && r.read_string()? == header.name && r.read_i32()? == header.id)
+	}
+}

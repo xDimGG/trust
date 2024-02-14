@@ -28,7 +28,7 @@ impl SafeReader {
 
 	pub fn read_bytes(&mut self, amount: usize) -> R<&[u8]> {
 		self.cur += amount;
-		if self.cur < self.buf.len() {
+		if self.cur <= self.buf.len() {
 			Ok(&self.buf[(self.cur - amount)..self.cur])
 		} else {
 			Err(WorldParseError::UnexpectedEOF)
@@ -97,7 +97,7 @@ impl SafeReader {
 
 	pub fn read_string(&mut self) -> R<String> {
 		let length = self.read_length()?;
-		Ok(unsafe { std::str::from_utf8_unchecked(self.read_bytes(length)?).to_owned() })
+		Ok(std::str::from_utf8(self.read_bytes(length)?).map_err(WorldParseError::InvalidString)?.to_owned())
 	}
 
 	pub fn read_text(&mut self) -> R<Text> {

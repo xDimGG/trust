@@ -27,8 +27,8 @@ async fn main() {
 	// let world_dir = doc_dir.join("My Games").join("Terraria").join("Worlds");
 	// let world_files = fs::read_dir(world_dir).unwrap();
 
-	match World::from_file(Path::new("C:\\Users\\Dim\\Documents\\My Games\\Terraria\\Worlds\\college_is_easy.wld")) {
-		Ok(w) => { dbg!(&w.entities); }
+	match World::from_file(Path::new("C:\\Users\\Dim\\Documents\\My Games\\Terraria\\Worlds\\shimmer.wld")) {
+		Ok(w) => { dbg!(w.header.name); }
 		Err(e) => { println!("Parse Error: {}", e); }
 	};
 }
