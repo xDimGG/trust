@@ -1,7 +1,7 @@
-use crate::binary::types::{Text, RGB};
+use crate::binary::types::{Text, RGB, Vector2};
 
 pub struct Writer {
-	buf: Vec<u8>,
+	pub buf: Vec<u8>,
 }
 
 #[allow(dead_code)]
@@ -17,7 +17,7 @@ impl Writer {
 		self.buf
 	}
 
-	pub fn write_bytes(&mut self, bytes: &[u8]) {
+	pub fn write_bytes(&mut self, bytes: Vec<u8>) {
 		self.buf.append(&mut bytes.to_vec())
 	}
 
@@ -30,39 +30,39 @@ impl Writer {
 	}
 
 	pub fn write_i8(&mut self, num: i8) {
-		self.write_bytes(&num.to_le_bytes())
+		self.write_bytes(num.to_le_bytes().to_vec())
 	}
 
 	pub fn write_u16(&mut self, num: u16) {
-		self.write_bytes(&num.to_le_bytes())
+		self.write_bytes(num.to_le_bytes().to_vec())
 	}
 
 	pub fn write_i16(&mut self, num: i16) {
-		self.write_bytes(&num.to_le_bytes())
+		self.write_bytes(num.to_le_bytes().to_vec())
 	}
 
 	pub fn write_u32(&mut self, num: u32) {
-		self.write_bytes(&num.to_le_bytes())
+		self.write_bytes(num.to_le_bytes().to_vec())
 	}
 
 	pub fn write_i32(&mut self, num: i32) {
-		self.write_bytes(&num.to_le_bytes())
+		self.write_bytes(num.to_le_bytes().to_vec())
 	}
 
 	pub fn write_u64(&mut self, num: u64) {
-		self.write_bytes(&num.to_le_bytes())
+		self.write_bytes(num.to_le_bytes().to_vec())
 	}
 
 	pub fn write_i64(&mut self, num: i64) {
-		self.write_bytes(&num.to_le_bytes())
+		self.write_bytes(num.to_le_bytes().to_vec())
 	}
 
 	pub fn write_f32(&mut self, num: f32) {
-		self.write_bytes(&num.to_le_bytes())
+		self.write_bytes(num.to_le_bytes().to_vec())
 	}
 
 	pub fn write_f64(&mut self, num: f64) {
-		self.write_bytes(&num.to_le_bytes())
+		self.write_bytes(num.to_le_bytes().to_vec())
 	}
 
 	pub fn write_length(&mut self, mut len: usize) {
@@ -76,8 +76,7 @@ impl Writer {
 
 	pub fn write_string(&mut self, string: String) {
 		self.write_length(string.len());
-		self.write_bytes(string.as_bytes());
-		self.write_byte(0)
+		self.write_bytes(string.as_bytes().to_vec())
 	}
 
 	pub fn write_text(&mut self, text: Text) {
@@ -89,5 +88,10 @@ impl Writer {
 		self.write_byte(rgb.0);
 		self.write_byte(rgb.1);
 		self.write_byte(rgb.2)
+	}
+
+	pub fn write_vector2(&mut self, vec2: Vector2) {
+		self.write_f32(vec2.0);
+		self.write_f32(vec2.1)
 	}
 }

@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, spanned::Spanned, Field, Fields, ItemEnum, Type};
+use syn::{parse_macro_input, spanned::Spanned, Field, Fields, GenericArgument, ItemEnum, PathArguments, Type};
 
 #[proc_macro_attribute]
 pub fn message_encoder_decoder(_: TokenStream, input: TokenStream) -> TokenStream {
@@ -36,7 +36,7 @@ pub fn message_encoder_decoder(_: TokenStream, input: TokenStream) -> TokenStrea
 	TokenStream::from(quote! {
 		#(#structs)*
 		#[derive(Debug, Clone)]
-		pub enum Message<'a> {
+		pub enum Message {
 			#(#variants),*
 		}
 		#encode_methods
@@ -50,7 +50,7 @@ fn message_decode(input: TokenStream) -> TokenStream {
 
 	for variant in input.variants {
 		let name = variant.ident;
-		if name.to_string() == "Unknown" {
+		if name.to_string() == "Custom" {
 			continue;
 		}
 
@@ -87,13 +87,13 @@ fn message_decode(input: TokenStream) -> TokenStream {
 	}
 
 	TokenStream::from(quote! {
-		impl<'a> From<&'a [u8]> for Message<'a>  {
-			fn from(buf: &'a [u8]) -> Self {
-				let mut r = Reader::new(buf);
+		impl<'a> From<Vec<u8>> for Message  {
+			fn from(buf: Vec<u8>) -> Self {
+				let mut r = Reader::new(&buf);
 
 				match r.read_byte() {
 					#(#cases),*,
-					code => Self::Unknown(code, &buf[1..]),
+					code => Self::Custom(code, buf.clone()),
 				}
 			}
 		}
@@ -116,6 +116,7 @@ fn type_to_read_method(s: &str) -> TokenStream2 {
 		"String" => quote! { r.read_string() },
 		"Text" => quote! { r.read_text() },
 		"RGB" => quote! { r.read_rgb() },
+		"Vector2" => quote! { r.read_vector2() },
 		ty => quote! { compile_error!(format!("Unsupported type: {}", #ty)) },
 	}
 }
@@ -123,7 +124,7 @@ fn type_to_read_method(s: &str) -> TokenStream2 {
 fn field_to_read_method(field: &Field) -> TokenStream2 {
 	match &field.ty {
 		Type::Path(ty) => {
-			type_to_read_method(ty.path.segments.first().unwrap().ident.to_string().as_str())
+			type_to_read_method(&ty.path.segments.first().unwrap().ident.to_string())
 		},
 		Type::Array(ty) => {
 			if let Type::Path(at) = &*ty.elem {
@@ -151,7 +152,7 @@ fn message_encode(input: TokenStream) -> TokenStream {
 
 	for variant in input.variants {
 		let name = variant.ident;
-		if name.to_string() == "Unknown" {
+		if name.to_string() == "Custom" {
 			continue;
 		}
 
@@ -204,18 +205,18 @@ fn message_encode(input: TokenStream) -> TokenStream {
 	}
 
 	TokenStream::from(quote! {
-		impl<'a> TryFrom<Message<'a>> for Vec<u8> {
+		impl TryFrom<Message> for Vec<u8> {
 			type Error = &'static str;
 
 			fn try_from(msg: Message) -> Result<Self, Self::Error> {
 				match msg {
 					#(#cases)*
-					Message::Unknown(code, buf) => {
+					Message::Custom(code, buf) => {
 						let mut w = Writer::new(code);
-						w.write_bytes(buf);
+						w.write_bytes(buf.clone());
 						Ok(w.finalize())
 					}
-					_ => Err("Unserializable message. Consider using Message::Unknown"),
+					_ => Err("Unserializable message. Consider using Message::Custom"),
 				}
 			}
 		}
@@ -238,14 +239,40 @@ fn type_to_write_method(s: &str, arg: TokenStream2) -> TokenStream2 {
 		"String" => quote! { w.write_string(#arg) },
 		"Text" => quote! { w.write_text(#arg) },
 		"RGB" => quote! { w.write_rgb(#arg) },
-		_ => quote! { compile_error!("Unsupported type") },
+		"Vector2" => quote! { w.write_vector2(#arg) },
+		e => { dbg!(e); quote! { compile_error!("Unsupported type") } },
 	}
 }
 
 fn field_to_write_method(field: &Field, name: TokenStream2) -> TokenStream2 {
 	match &field.ty {
 		Type::Path(ty) => {
-			type_to_write_method(ty.path.segments.first().unwrap().ident.to_string().as_str(), name)
+			let p_name = &ty.path.segments.first().unwrap().ident.to_string();
+			if p_name == "Vec" || p_name == "Option" {
+				if let PathArguments::AngleBracketed(ab) = &ty.path.segments.first().unwrap().arguments {
+					if let GenericArgument::Type(gt) = &ab.args.first().unwrap() {
+						if let Type::Path(gtp) = gt {
+							let ident = &gtp.path.segments.first().unwrap().ident.to_string();
+							let method = type_to_write_method(ident.as_str(), quote! { x });
+							match p_name.as_str() {
+								"Vec" => quote! {
+									for x in #name {
+										#method
+									}
+								},
+								"Option" => quote! {
+									if let Some(x) = #name {
+										#method
+									}
+								},
+								_ => quote! { compile_error!("Unsupported type") },
+							}
+						} else { quote! { compile_error!("Unsupported type") } }
+					} else { quote! { compile_error!("Unsupported type") } }
+				} else { quote! { compile_error!("Unsupported type") } }
+			} else {
+				type_to_write_method(ty.path.segments.first().unwrap().ident.to_string().as_str(), name)
+			}
 		},
 		Type::Array(ty) => {
 			if let Type::Path(at) = &*ty.elem {

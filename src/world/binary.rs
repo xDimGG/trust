@@ -2,8 +2,8 @@ use crate::binary::types::{Text, RGB, Vector2};
 use crate::world::types::WorldParseError;
 
 pub struct SafeReader {
-	buf: Vec<u8>,
-	cur: usize,
+	pub buf: Vec<u8>,
+	pub cur: usize,
 }
 
 type R<T> = Result<T, WorldParseError>;
@@ -31,7 +31,7 @@ impl SafeReader {
 		if self.cur <= self.buf.len() {
 			Ok(&self.buf[(self.cur - amount)..self.cur])
 		} else {
-			Err(WorldParseError::UnexpectedEOF)
+			Err(WorldParseError::UnexpectedEOI)
 		}
 	}
 

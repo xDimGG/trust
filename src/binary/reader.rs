@@ -1,8 +1,8 @@
-use crate::binary::types::{Text, RGB};
+use crate::binary::types::{Text, RGB, Vector2};
 
 pub struct Reader<'a> {
-	buf: &'a [u8],
-	cur: usize,
+	pub buf: &'a [u8],
+	pub cur: usize,
 }
 
 #[allow(dead_code)]
@@ -83,5 +83,9 @@ impl<'a> Reader<'a> {
 
 	pub fn read_rgb(&mut self) -> RGB {
 		RGB(self.read_byte(), self.read_byte(), self.read_byte())
+	}
+
+	pub fn read_vector2(&mut self) -> Vector2 {
+		Vector2(self.read_f32(), self.read_f32())
 	}
 }

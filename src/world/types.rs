@@ -1,4 +1,4 @@
-use std::{fmt, io, str::Utf8Error, str};
+use std::{default, fmt, io, str::{self, Utf8Error}};
 
 use crate::binary::types::Vector2;
 
@@ -46,7 +46,7 @@ pub const MAGIC_STRING: &[u8] = "relogic".as_bytes();
 
 #[derive(Debug)]
 pub enum WorldParseError {
-	UnexpectedEOF,
+	UnexpectedEOI,
 	InvalidNumber,
 	BadFileSignature,
 	ExpectedWorldType,
@@ -60,7 +60,7 @@ pub enum WorldParseError {
 impl fmt::Display for WorldParseError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			Self::UnexpectedEOF => write!(f, "Expected more data but reach end of file."),
+			Self::UnexpectedEOI => write!(f, "Expected more data but reached end of input"),
 			Self::InvalidNumber => write!(f, "Could not parse number"),
 			Self::InvalidString(err) => write!(f, "Could not parse string, got {}", err),
 			Self::BadFileSignature => write!(f, "Invalid file signature (expecting \"{}\")", str::from_utf8(MAGIC_STRING).unwrap()),
@@ -68,7 +68,7 @@ impl fmt::Display for WorldParseError {
 			Self::InvalidFooter => write!(f, "Footer of file does not match header"),
 			Self::PositionCheckFailed(s) => write!(f, "Position of buffer cursor does not match metadata position for field {}", s),
 			Self::UnsupportedVersion(v) => write!(f, "Unsupported file version: {}", v),
-			Self::FSError(err) => write!(f, "{}", err),
+			Self::FSError(err) => write!(f, "Got FS error: {}", err),
 		}
 	}
 }
@@ -251,7 +251,7 @@ pub struct Header {
 	pub unlocked_nurse_spawn: bool,
 	pub unlocked_princess_spawn: bool,
 	pub combat_book_volume_two_was_used: bool,
-	pub peddlers_satchel_was_use: bool,
+	pub peddlers_satchel_was_used: bool,
 	pub unlocked_slime_green_spawn: bool,
 	pub unlocked_slime_old_spawn: bool,
 	pub unlocked_slime_purple_spawn: bool,
@@ -271,9 +271,9 @@ pub struct Format {
 
 pub const WALL_COUNT: u16 = 347; // WallID.Count
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Tile {
-	pub header: [u8; 4], // remove this later
+	// pub header: [u8; 4], // remove this later
 	pub id: i16, // https://terraria.fandom.com/wiki/Tile_IDs
 	pub active: bool,
 	pub frame_x: i16,
@@ -281,7 +281,7 @@ pub struct Tile {
 	pub color: u8,
 	pub wall: u16,
 	pub wall_color: u16,
-	pub liquid: u8, // 0: Water, 1: Lava, 2: Honey, 3: Shimmer
+	pub liquid: Liquid, // 0: Water, 1: Lava, 2: Honey, 3: Shimmer
 	pub liquid_header: u8,
 	pub wire_1: bool,
 	pub wire_2: bool,
@@ -414,4 +414,14 @@ pub enum CreativePower {
 	DifficultySliderPower(f32),
 	StopBiomeSpreadPower(bool),
 	SpawnRateSliderPerPlayerPower,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum Liquid {
+	Water,
+	Lava,
+	Honey,
+	Shimmer,
+	#[default]
+	None,
 }

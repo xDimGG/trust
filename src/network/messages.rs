@@ -1,5 +1,5 @@
 use macros::message_encoder_decoder;
-use crate::binary::types::{RGB, Text};
+use crate::binary::types::{Text, Vector2, RGB};
 use crate::binary::writer::Writer;
 use crate::binary::reader::Reader;
 
@@ -67,7 +67,7 @@ const MAX_BUFFS: usize = 44; // from Player.maxBuffs
 const AREA_ID_COUNT: usize = 13; // from TreeTopsInfo.AreaId.Count
 
 #[message_encoder_decoder]
-pub enum Message<'a> {
+pub enum Message {
 	/// 1 <-
 	VersionIdentifier(String),
 	/// 2 ->
@@ -168,7 +168,7 @@ pub enum Message<'a> {
 		tree_style: [u8; 4],
 		cave_back_x: [i32; 3],
 		cave_back_style: [u8; 4],
-		tree_top_variations: [i32; AREA_ID_COUNT],
+		tree_top_variations: [u8; AREA_ID_COUNT],
 		max_raining: f32,
 		flags: [u8; 10],
 		sundial_cooldown: u8,
@@ -189,11 +189,31 @@ pub enum Message<'a> {
 		x: i32,
 		y: i32,
 	},
+	/// 9 ->
+	SpawnResponse {
+		status: i32,
+		text: Text,
+		flags: u8, // HideStatusTextPercent | StatusTextHasShadows << 1 | ServerWantsToRunCheckBytesInClientLoopThread << 2
+	},
 	/// 16 <->
 	PlayerHealth {
 		client_id: u8,
 		current: i16,
 		maximum: i16,
+	},
+	/// 23 ->
+	NPCInfo {
+		id: i16,
+		position: Vector2,
+		velocity: Vector2,
+		target: u16,
+		flags_1: u8,
+		flags_2: u8,
+		npc_ai: Vec<u8>,
+		id_2: i16,
+		stats_scaled_for_n_players: Option<u8>,
+		strength_multiplier: Option<u8>,
+		
 	},
 	/// 37 ->
 	PasswordRequest,
@@ -238,10 +258,10 @@ pub enum Message<'a> {
 		hide_accessory: u16,
 	},
 	/// 0 <->
-	Unknown(u8, &'a [u8]),
+	Custom(u8, Vec<u8>),
 }
 
-impl<'a> Message<'a> {
+impl Message {
 	pub async fn write(self, mut stream: Pin<&mut impl AsyncWrite>) -> Result<usize, &str> {
 		let buffer: Vec<u8> = self.try_into()?;
 		stream.write(&buffer).await.map_err(|_| "Error while writing")
