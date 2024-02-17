@@ -621,7 +621,6 @@ impl World {
 
 				let liquid_bits = (h_1 & 0b11000) >> 3;
 				let (liquid, liquid_header) = if liquid_bits != 0 {
-					let liquid_header = r.read_byte()?;
 					(if h_3 & 128 == 128 {
 						Liquid::Shimmer // shimmer
 					} else {
@@ -630,7 +629,7 @@ impl World {
 							3 => Liquid::Honey, // honey
 							_ => Liquid::Water, // water?
 						}
-					}, liquid_header)
+					}, r.read_byte()?)
 				} else {
 					(Liquid::None, 0)
 				};

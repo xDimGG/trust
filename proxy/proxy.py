@@ -1,5 +1,6 @@
 import socket
 from threading import Thread
+import zlib
 
 # MITM proxy to read data between existing terraria server and client
 
@@ -19,14 +20,14 @@ def copy(src, dst, prefix):
 			if not data:
 				break
 
-			print(f'{prefix} ({data[0]}) {data[1:].hex()}')
-			if data[0] == 32:
-				data = bytearray(data)
-				data[4:6] = int(999).to_bytes(2, 'little')
+			disp_data = data[1:]
+			if data[0] == 10:
+				disp_data = zlib.decompress(disp_data, wbits=-15)
+			print(f'{prefix} ({data[0]}) {disp_data.hex()}')
 
 			dst.sendall(data_size + data)
-	except:
-		pass
+	except Exception as ex:
+		print(ex)
 
 def start_proxy(client):
 	try:
@@ -40,8 +41,8 @@ def start_proxy(client):
 				for t in threads: t.join()
 
 		print(f'Client has disconnected or true server stopped')
-	except:
-		pass
+	except Exception as ex:
+		print(ex)
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 	s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

@@ -63,6 +63,15 @@ impl Sanitize for PlayerInventorySlot {
 	}
 }
 
+impl Sanitize for PlayerSpawnRequest {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+		if self.context > 2 {
+			self.context = 2;
+		}
+	}
+}
+
 const MAX_BUFFS: usize = 44; // from Player.maxBuffs
 const AREA_ID_COUNT: usize = 13; // from TreeTopsInfo.AreaId.Count
 
@@ -195,6 +204,16 @@ pub enum Message {
 		text: Text,
 		flags: u8, // HideStatusTextPercent | StatusTextHasShadows << 1 | ServerWantsToRunCheckBytesInClientLoopThread << 2
 	},
+	/// 12 <-
+	PlayerSpawnRequest {
+		client_id: u8,
+		x: i16,
+		y: i16,
+		respawn_timer: i32,
+		deaths_pve: i16,
+		deaths_pvp: i16,
+		context: u8, // ReviveFromDeath = 0, SpawningIntoWorld = 1, RecallFromItem = 2
+	},
 	/// 16 <->
 	PlayerHealth {
 		client_id: u8,
@@ -230,7 +249,7 @@ pub enum Message {
 		maximum: i16,
 	},
 	/// 49 ->
-	PlayerSpawn,
+	PlayerSyncDone,
 	/// 50 <-
 	PlayerBuffs {
 		client_id: u8,
@@ -268,6 +287,8 @@ pub enum Message {
 		maximum: i32,
 		current: i32,
 	},
+	/// 129 ->
+	PlayerSpawnResponse,
 	/// 136 ->
 	MonsterTypes {
 		all: [u16; 6],

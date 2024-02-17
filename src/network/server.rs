@@ -3,7 +3,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use flate2::write::ZlibEncoder;
-use flate2::Compression;
+use flate2::{Compress, Compression};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{Result, AsyncReadExt};
 use tokio::sync::{Mutex, RwLock, broadcast};
@@ -11,7 +11,7 @@ use tokio::select;
 use std::sync::Arc;
 
 use crate::binary::writer::Writer;
-use crate::network::messages::{self, Sanitize, Message, ConnectionApprove, WorldHeader, SpawnResponse, NPCInfo, KillCount, WorldTotals, MoonlordCountdown, PillarShieldStrengths, MonsterTypes};
+use crate::network::messages::{self, Sanitize, Message, ConnectionApprove, WorldHeader, SpawnResponse, NPCInfo, KillCount, WorldTotals, MoonlordCountdown, PillarShieldStrengths, MonsterTypes, PlayerSpawnRequest};
 use crate::binary::types::{Text, TextMode, Vector2};
 use crate::world::types::{Liquid, Tile, World};
 use crate::network::utils::{flags, get_section_x, get_section_y};
@@ -27,6 +27,7 @@ pub enum ConnectionState {
 	New,
 	PendingAuthentication,
 	Authenticated,
+	DetailsReceived,
 	Complete,
 }
 
@@ -164,7 +165,6 @@ impl Server {
 
 				if version == GAME_VERSION {
 					let password = self.password.read().await;
-					dbg!(&password);
 					if password.is_empty() {
 						clients[src].as_mut().unwrap().state = ConnectionState::Authenticated;
 						vec![Message::ConnectionApprove(ConnectionApprove {
@@ -208,16 +208,14 @@ impl Server {
 					return vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))]
 				}
 
-				if clients[src].as_ref().unwrap().state != ConnectionState::Complete {
-					let exists_same_name = clients
-						.iter()
-						.any(
-							|c_opt| c_opt.as_ref().map_or(false,
-								|c| c.details.as_ref().map_or(false, |d| d.name == pd.name)));
-					if exists_same_name {
-						// TODO: support NetworkText.FromKey substitutions
-						return vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.5".to_owned()))]
-					}
+				let exists_same_name = clients
+					.iter()
+					.any(
+						|c_opt| c_opt.as_ref().map_or(false,
+							|c| c.details.as_ref().map_or(false, |d| d.name == pd.name)));
+				if exists_same_name {
+					// TODO: support NetworkText.FromKey substitutions
+					return vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.5".to_owned()))]
 				}
 
 				if pd.name.len() > MAX_NAME_LEN {
@@ -232,7 +230,9 @@ impl Server {
 
 				pd.sanitize(src as u8);
 				tx.send((Message::PlayerDetails(pd.clone()), Some(src))).unwrap();
-				clients[src].as_mut().unwrap().details = Some(pd);
+				let c = clients[src].as_mut().unwrap();
+				c.details = Some(pd);
+				c.state = ConnectionState::DetailsReceived;
 				vec![]
 			}
 			Message::PlayerHealth(mut ph) => {
@@ -273,6 +273,10 @@ impl Server {
 				// todo: Main.SyncAnInvasion
 			}
 			Message::SpawnRequest(sr) => {
+				if clients[src].as_ref().unwrap().state != ConnectionState::DetailsReceived {
+					return vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))]
+				}
+
 				let w = self.world.read().await;
 				let mut res = vec![self.get_msg_world_header().await];
 
@@ -283,8 +287,8 @@ impl Server {
 
 				let sec_x_start  = max(get_section_x(w.header.spawn_tile_x) - 2, 0);
 				let sec_y_start  = max(get_section_y(w.header.spawn_tile_y) - 1, 0);
-				let sec_x_end = min(sec_x_start + 5, max_sec_x);
-				let sec_y_end = min(sec_y_start + 3, max_sec_y);
+				let sec_x_end = min(get_section_x(w.header.spawn_tile_x) + 3, max_sec_x);
+				let sec_y_end = min(get_section_y(w.header.spawn_tile_y) + 6, max_sec_y);
 
 				let sec_count = (sec_x_end - sec_x_start) * (sec_y_end - sec_y_start);
 				res.push(Message::SpawnResponse(SpawnResponse {
@@ -371,6 +375,7 @@ impl Server {
 				// }
 
 				for (i, &kc) in w.header.npc_kill_counts.iter().enumerate() {
+					if i >= 290 { break }
 					res.push(Message::KillCount(KillCount {
 						id: i as i16,
 						amount: kc,
@@ -378,7 +383,7 @@ impl Server {
 				}
 
 				res.push(Message::WorldTotals(WorldTotals {
-					good: 100,
+					good: 0,
 					evil: 0,
 					blood: 0,
 				}));
@@ -397,13 +402,24 @@ impl Server {
 					all: [506, 506, 499, 495, 494, 495],
 				}));
 
-				res.push(Message::PlayerSpawn);
+				res.push(Message::PlayerSyncDone);
 
 				// Main.BestiaryTracker.OnPlayerJoining(this.whoAmI);
 				// CreativePowerManager.Instance.SyncThingsToJoiningPlayer(this.whoAmI);
 				// Main.PylonSystem.OnPlayerJoining(this.whoAmI);
 
 				res
+				// vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))]
+			}
+			Message::PlayerSpawnRequest(mut psr) => {
+				psr.sanitize(src as u8);
+				if clients[src].as_ref().unwrap().state != ConnectionState::DetailsReceived {
+					return vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))]
+				}
+
+				tx.send((Message::PlayerSpawnRequest(psr), Some(src))).unwrap();
+				clients[src].as_mut().unwrap().state = ConnectionState::Complete;
+				vec![Message::PlayerSpawnResponse]
 			}
 			Message::Custom(code, buf) => {
 				println!("Custom ({}): {:?}", code, buf);
@@ -430,7 +446,9 @@ impl Server {
 		w.write_i16((y_end - y_start) as i16);
 		w.write_i16((x_end - x_start) as i16);
 
-		let tiles = &self.world.read().await.tiles;
+		let world = &self.world.read().await;
+		let tiles = &world.tiles;
+		let importance = &world.format.importance;
 
 		let mut last_tile = &Tile::default();
 		let mut repeat_count: u16 = 0;
@@ -455,13 +473,13 @@ impl Server {
 					if repeat_count > 0 {
 						buf[i] = repeat_count as u8;
 						i += 1;
-						let mut f = 64;
 						if repeat_count > u8::MAX as u16 {
-							f <<= 1;
+							h_1 |= 128;
 							buf[i] = (repeat_count >> 8) as u8;
 							i += 1
+						} else {
+							h_1 |= 64;
 						}
-						h_1 |= f
 					}
 
 					buf[j] = h_1;
@@ -487,8 +505,11 @@ impl Server {
 
 					// determine important tiles
 
-					// todo: check if this is actuallythe same as checking Main.tileFrameImportant
-					if !(tile.frame_x == -1 && tile.frame_y == -1) {
+					// todo: make this a variable
+					// HashSet();
+
+					if importance[tile.id as usize] {
+					// if !(tile.frame_x == -1 && tile.frame_y == -1) {
 						[buf[i], buf[i + 1]] = tile.frame_x.to_le_bytes();
 						i += 2;
 						[buf[i], buf[i + 1]] = tile.frame_y.to_le_bytes();
@@ -593,24 +614,25 @@ impl Server {
 		if repeat_count > 0 {
 			buf[i] = repeat_count as u8;
 			i += 1;
-			let mut f = 64;
 			if repeat_count > u8::MAX as u16 {
-				f <<= 1;
+				h_1 |= 128;
 				buf[i] = (repeat_count >> 8) as u8;
 				i += 1
+			} else {
+				h_1 |= 64;
 			}
-			h_1 |= f
 		}
 
 		buf[j] = h_1;
 		w.write_bytes(buf[j..i].to_vec());
 
 		// todo: send npcs, signs, and portals
-		w.write_i32(0);
-		w.write_i32(0);
-		w.write_i32(0);
+		w.write_i16(0);
+		w.write_i16(0);
+		w.write_i16(0);
 
-		let mut out = ZlibEncoder::new(Vec::new(), Compression::default());
+		let compress = Compress::new_with_window_bits(Compression::default(), false, 15);
+		let mut out = ZlibEncoder::new_with_compress(vec![], compress);
 		out.write_all(&w.buf[3..]).unwrap();
 
 		Message::Custom(10, out.finish().unwrap())
