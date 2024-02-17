@@ -29,12 +29,10 @@ impl Drop for Reader<'_> {
 
 #[tokio::main]
 async fn main() {
-	// let world = World::from_file(Path::new("C:\\Users\\Dim\\Documents\\My Games\\Terraria\\Worlds\\shimmer.wld")).unwrap();
-	let world = World::from_file(Path::new("/Users/angelolloti/Library/Application Support/Terraria/Worlds/Courtyard_of_Grasshoppers.wld")).unwrap();
-	dbg!(&world.npcs);
-	// dbg!(world.chests.iter().map(|c| (c.x, c.y)).collect::<Vec<(i32, i32)>>());
-	let srv = Server::new(world, "password");
-	srv.listen("127.0.0.1:7778").await.unwrap();
+	// let world = World::from_file(Path::new("/Users/angelolloti/Library/Application Support/Terraria/Worlds/Courtyard_of_Grasshoppers.wld")).unwrap();
+	let world = World::from_file(Path::new("C:\\Users\\Dim\\Documents\\My Games\\Terraria\\Worlds\\dim.wld")).unwrap();
+	let srv = Server::new(world, "");
+	srv.listen("127.0.0.1:7777").await.unwrap();
 
 	// let Some(user_dirs) = UserDirs::new() else {
 	// 	panic!("couldn't find user dir")

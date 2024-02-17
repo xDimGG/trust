@@ -11,8 +11,8 @@ use tokio::select;
 use std::sync::Arc;
 
 use crate::binary::writer::Writer;
-use crate::network::messages::{self, Sanitize, Message, ConnectionApprove, WorldHeader, SpawnResponse};
-use crate::binary::types::{Text, TextMode};
+use crate::network::messages::{self, Sanitize, Message, ConnectionApprove, WorldHeader, SpawnResponse, NPCInfo, KillCount, WorldTotals, MoonlordCountdown, PillarShieldStrengths, MonsterTypes};
+use crate::binary::types::{Text, TextMode, Vector2};
 use crate::world::types::{Liquid, Tile, World};
 use crate::network::utils::{flags, get_section_x, get_section_y};
 
@@ -97,7 +97,7 @@ impl Server {
 		}
 	}
 
-	async fn accept(&self, stream: &mut TcpStream, addr: SocketAddr) -> Result<()> {
+	async fn accept(&self, stream: &mut TcpStream, addr: SocketAddr) {
 		let (mut rh, mut wh) = stream.split();
 		let mut tx = self.broadcast.clone();
 		let mut rx = self.broadcast.subscribe();
@@ -107,7 +107,7 @@ impl Server {
 			let mut clients = self.clients.lock().await;
 			let Some(id) = clients.iter().position(Option::is_none) else {
 				Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "CLI.ServerIsFull".to_owned())).write(Pin::new(&mut wh)).await.unwrap();
-				return Ok(())
+				return
 			};
 			clients[id] = Some(Client::new(addr));
 			id
@@ -117,15 +117,23 @@ impl Server {
 			let mut length = [0u8; 2];
 			select! {
 				read_result = rh.read(&mut length) => {
-					read_result?;
-					let length = u16::from_le_bytes(length);
+					// Player disconnected
+					if read_result.is_err() || read_result.unwrap() == 0 {
+						self.clients.lock().await[src] = None;
+						return;
+					}
 
+					let length = u16::from_le_bytes(length);
 					if length < 2 {
 						continue;
 					}
 
 					let mut buffer = vec![0u8; length as usize - 2];
-					rh.read_exact(&mut buffer).await?;
+					let read_result = rh.read_exact(&mut buffer).await;
+					if read_result.is_err() || read_result.unwrap() == 0 {
+						self.clients.lock().await[src] = None;
+						return;
+					}
 
 					let to_send = self.handle_message(Message::from(buffer), src, &mut tx).await;
 					for msg in to_send {
@@ -135,6 +143,7 @@ impl Server {
 				content = rx.recv() => {
 					let (content, ignore_id) = content.unwrap();
 					if ignore_id.map_or(true, |id| id != src) {
+						// dbg!(&content);
 						content.write(Pin::new(&mut wh)).await.unwrap();
 					}
 				}
@@ -155,6 +164,7 @@ impl Server {
 
 				if version == GAME_VERSION {
 					let password = self.password.read().await;
+					dbg!(&password);
 					if password.is_empty() {
 						clients[src].as_mut().unwrap().state = ConnectionState::Authenticated;
 						vec![Message::ConnectionApprove(ConnectionApprove {
@@ -264,7 +274,6 @@ impl Server {
 			}
 			Message::SpawnRequest(sr) => {
 				let w = self.world.read().await;
-				// dbg!(w.header.spawn_tile_x, w.header.spawn_tile_y);
 				let mut res = vec![self.get_msg_world_header().await];
 
 				let flag_4 = !(sr.x < 10 || sr.x > (w.header.width - 10) || sr.y < 10 || sr.y > (w.header.height - 10));
@@ -337,10 +346,62 @@ impl Server {
 
 				// Send all NPCs
 				for npc in &w.npcs {
-					res.push(NPCInfo {
-						
-					})
+					res.push(Message::NPCInfo(NPCInfo {
+						id: npc.id as i16,
+						position: Vector2(npc.x, npc.y),
+						velocity: Vector2(0., 0.),
+						target: 0,
+						flags_1: 0,
+						flags_2: 0,
+						npc_ai: vec![],
+						id_2: npc.id as i16,
+						stats_scaled_for_n_players: None,
+						strength_multiplier: None,
+						life_len: None,
+						life_i8: None,
+						life_i16: None,
+						life_i32: None,
+						release_owner: None,
+					}))
 				}
+
+				// for (int number6 = 0; number6 < 1000; ++number6) {
+				// 	if (Main.projectile[number6].active && (Main.projPet[Main.projectile[number6].type] || Main.projectile[number6].netImportant))
+				// 		NetMessage.TrySendData(27, this.whoAmI, number: number6);
+				// }
+
+				for (i, &kc) in w.header.npc_kill_counts.iter().enumerate() {
+					res.push(Message::KillCount(KillCount {
+						id: i as i16,
+						amount: kc,
+					}))
+				}
+
+				res.push(Message::WorldTotals(WorldTotals {
+					good: 100,
+					evil: 0,
+					blood: 0,
+				}));
+
+				// NetMessage.TrySendData(103); Message::MoonlordCountdown
+
+				res.push(Message::PillarShieldStrengths(PillarShieldStrengths {
+					nebula: 0,
+					solar: 0,
+					stardust: 0,
+					vortex: 0,
+				}));
+
+				// todo: implement NPC.SetWorldSpecificMonstersByWorldID and UnifiedRandom or my own random gen
+				res.push(Message::MonsterTypes(MonsterTypes {
+					all: [506, 506, 499, 495, 494, 495],
+				}));
+
+				res.push(Message::PlayerSpawn);
+
+				// Main.BestiaryTracker.OnPlayerJoining(this.whoAmI);
+				// CreativePowerManager.Instance.SyncThingsToJoiningPlayer(this.whoAmI);
+				// Main.PylonSystem.OnPlayerJoining(this.whoAmI);
 
 				res
 			}
@@ -358,7 +419,7 @@ impl Server {
 	async fn get_msg_section(&self, sec_x: i32, sec_y: i32) -> Message {
 		let x_start = get_tile_x_start(sec_x);
 		let y_start = get_tile_y_start(sec_y);
-		let x_end = get_tile_x_end(sec_y);
+		let x_end = get_tile_x_end(sec_x);
 		let y_end = get_tile_y_end(sec_y);
 
 		// todo: optimize this to reduce data copying
@@ -408,6 +469,7 @@ impl Server {
 					repeat_count = 0;
 				}
 
+				i = 4;
 				let mut h_2 = 0;
 				let mut h_3 = 0;
 				let mut h_4 = 0;
@@ -477,7 +539,7 @@ impl Server {
 				if tile.half_brick {
 					h_4 |= 16;
 				} else if tile.slope > 0 {
-					h_4 |= tile.slope + 1 << 4;
+					h_4 |= (tile.slope + 1) << 4;
 				}
 				if tile.actuator {
 					h_3 |= 2;

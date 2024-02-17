@@ -1,4 +1,4 @@
-use std::{default, fmt, io, str::{self, Utf8Error}};
+use std::{fmt, io, str::{self, Utf8Error}};
 
 use crate::binary::types::Vector2;
 

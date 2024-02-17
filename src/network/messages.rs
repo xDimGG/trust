@@ -209,11 +209,15 @@ pub enum Message {
 		target: u16,
 		flags_1: u8,
 		flags_2: u8,
-		npc_ai: Vec<u8>,
+		npc_ai: Vec<f32>,
 		id_2: i16,
 		stats_scaled_for_n_players: Option<u8>,
-		strength_multiplier: Option<u8>,
-		
+		strength_multiplier: Option<f32>,
+		life_len: Option<u8>,
+		life_i8: Option<i8>,
+		life_i16: Option<i16>,
+		life_i32: Option<i32>,
+		release_owner: Option<u8>,
 	},
 	/// 37 ->
 	PasswordRequest,
@@ -225,10 +229,18 @@ pub enum Message {
 		current: i16,
 		maximum: i16,
 	},
+	/// 49 ->
+	PlayerSpawn,
 	/// 50 <-
 	PlayerBuffs {
 		client_id: u8,
 		buffs: [u16; MAX_BUFFS],
+	},
+	/// 57 ->
+	WorldTotals {
+		good: u8,
+		evil: u8,
+		blood: u8,
 	},
 	/// 68 <-
 	UUID(String),
@@ -241,15 +253,24 @@ pub enum Message {
 	},
 	/// 83 ->
 	KillCount {
-		id: u16,
-		amount: u32,
+		id: i16,
+		amount: i32,
 	},
 	/// 101 ->
-	PillarsStatus {
+	PillarShieldStrengths {
 		solar: u16,
 		vortex: u16,
 		nebula: u16,
 		stardust: u16,
+	},
+	/// 103 ->
+	MoonlordCountdown {
+		maximum: i32,
+		current: i32,
+	},
+	/// 136 ->
+	MonsterTypes {
+		all: [u16; 6],
 	},
 	/// 147 <->
 	PlayerLoadout {
