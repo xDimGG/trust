@@ -204,7 +204,7 @@ pub enum Message {
 		text: Text,
 		flags: u8, // HideStatusTextPercent | StatusTextHasShadows << 1 | ServerWantsToRunCheckBytesInClientLoopThread << 2
 	},
-	/// 12 <-
+	/// 12 <->
 	PlayerSpawnRequest {
 		client_id: u8,
 		x: i16,
@@ -250,7 +250,7 @@ pub enum Message {
 	},
 	/// 49 ->
 	PlayerSyncDone,
-	/// 50 <-
+	/// 50 <->
 	PlayerBuffs {
 		client_id: u8,
 		buffs: [u16; MAX_BUFFS],
@@ -263,6 +263,11 @@ pub enum Message {
 	},
 	/// 68 <-
 	UUID(String),
+	/// 74 ->
+	AnglerQuest {
+		id: u8,
+		finished: bool,
+	},
 	/// 78 ->
 	InvasionProgress {
 		progress: i32,

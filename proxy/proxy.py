@@ -20,9 +20,13 @@ def copy(src, dst, prefix):
 			if not data:
 				break
 
+			if data[0] == 82:
+				continue
+
 			disp_data = data[1:]
-			if data[0] == 10:
-				disp_data = zlib.decompress(disp_data, wbits=-15)
+			# if data[0] == 10:
+			# 	disp_data = zlib.decompress(disp_data, wbits=-15)
+			# 	data = data[:1] + zlib.compress(disp_data, level=9)[2:-4]
 			print(f'{prefix} ({data[0]}) {disp_data.hex()}')
 
 			dst.sendall(data_size + data)

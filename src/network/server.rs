@@ -11,7 +11,7 @@ use tokio::select;
 use std::sync::Arc;
 
 use crate::binary::writer::Writer;
-use crate::network::messages::{self, Sanitize, Message, ConnectionApprove, WorldHeader, SpawnResponse, NPCInfo, KillCount, WorldTotals, MoonlordCountdown, PillarShieldStrengths, MonsterTypes, PlayerSpawnRequest};
+use crate::network::messages::{self, Sanitize, Message, ConnectionApprove, WorldHeader, SpawnResponse, NPCInfo, KillCount, WorldTotals, MoonlordCountdown, PillarShieldStrengths, MonsterTypes, AnglerQuest, PlayerSpawnRequest};
 use crate::binary::types::{Text, TextMode, Vector2};
 use crate::world::types::{Liquid, Tile, World};
 use crate::network::utils::{flags, get_section_x, get_section_y};
@@ -23,6 +23,7 @@ const MAX_CLIENTS: usize = 256;
 const MAX_NAME_LEN: usize = 20;
 
 #[derive(PartialEq, Eq)]
+#[repr(u8)]
 pub enum ConnectionState {
 	New,
 	PendingAuthentication,
@@ -288,7 +289,7 @@ impl Server {
 				let sec_x_start  = max(get_section_x(w.header.spawn_tile_x) - 2, 0);
 				let sec_y_start  = max(get_section_y(w.header.spawn_tile_y) - 1, 0);
 				let sec_x_end = min(get_section_x(w.header.spawn_tile_x) + 3, max_sec_x);
-				let sec_y_end = min(get_section_y(w.header.spawn_tile_y) + 6, max_sec_y);
+				let sec_y_end = min(get_section_y(w.header.spawn_tile_y) + 2, max_sec_y);
 
 				let sec_count = (sec_x_end - sec_x_start) * (sec_y_end - sec_y_start);
 				res.push(Message::SpawnResponse(SpawnResponse {
@@ -384,7 +385,7 @@ impl Server {
 
 				res.push(Message::WorldTotals(WorldTotals {
 					good: 0,
-					evil: 0,
+					evil: 6,
 					blood: 0,
 				}));
 
@@ -413,13 +414,27 @@ impl Server {
 			}
 			Message::PlayerSpawnRequest(mut psr) => {
 				psr.sanitize(src as u8);
-				if clients[src].as_ref().unwrap().state != ConnectionState::DetailsReceived {
+				let client = clients[src].as_mut().unwrap();
+
+				if client.state != ConnectionState::DetailsReceived && client.state != ConnectionState::Complete {
 					return vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))]
 				}
 
 				tx.send((Message::PlayerSpawnRequest(psr), Some(src))).unwrap();
-				clients[src].as_mut().unwrap().state = ConnectionState::Complete;
-				vec![Message::PlayerSpawnResponse]
+				if client.state == ConnectionState::Complete {
+					return vec![];
+				}
+
+				client.state = ConnectionState::Complete;
+				// if (NetMessage.DoesPlayerSlotCountAsAHost(this.whoAmI))
+				//   NetMessage.TrySendData(139, this.whoAmI, number: this.whoAmI, number2: ((float) flag5.ToInt()));
+
+				let world = self.world.read().await;
+
+				vec![
+					Message::AnglerQuest(AnglerQuest { id: world.header.angler_quest as u8, finished: false }),
+					Message::PlayerSpawnResponse,
+				]
 			}
 			Message::Custom(code, buf) => {
 				println!("Custom ({}): {:?}", code, buf);
