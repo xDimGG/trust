@@ -1,1 +1,1 @@
-python proxy.py > logs.txt
+python proxy.py > log.txt

@@ -3,7 +3,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use flate2::write::ZlibEncoder;
-use flate2::{Compress, Compression, FlushCompress};
+use flate2::{Compress, Compression};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{Result, AsyncReadExt};
 use tokio::sync::{Mutex, RwLock, broadcast};
@@ -558,7 +558,7 @@ impl Server {
 
 				// todo: ensure isTheSameAs is like PartialEq
 				// todo: automate this to use TileID.Sets.AllowsSaveCompressionBatching
-				if tile == last_tile && tile.id != 520 && tile.id != 423 {
+				if tile.is(last_tile) && tile.id != 423 && tile.id != 520 {
 					repeat_count += 1;
 					continue;
 				}
@@ -767,12 +767,12 @@ impl Server {
 		for (x, y) in entity_tiles {
 			let entity = world.entities.iter().find(|c| c.x == x as i16 && c.y == y as i16).unwrap();
 			match &entity.entity {
-				EntityExtra::Dummy { npc } => {
+				EntityExtra::Dummy { .. } => {
 					w.write_byte(0);
 					w.write_i32(entity.id);
 					w.write_i16(entity.x);
 					w.write_i16(entity.y);
-					w.write_i16(*npc);
+					w.write_i16(-1);
 				},
 				EntityExtra::ItemFrame(frame) => {
 					w.write_byte(1);
@@ -901,10 +901,7 @@ impl Server {
 			}
 		}
 
-		// let mut v = Vec::with_capacity(w.buf.len());
 		let mut out = ZlibEncoder::new_with_compress(vec![], Compress::new(Compression::default(), false));
-		// let mut c = Compress::new(Compression::default(), false);
-		// c.compress_vec(&w.buf[3..], &mut v, FlushCompress::Finish).unwrap();
 		out.write_all(&w.buf[3..]).unwrap();
 
 		Message::Custom(10, out.finish().unwrap())

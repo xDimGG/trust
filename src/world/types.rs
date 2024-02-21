@@ -271,7 +271,7 @@ pub struct Format {
 
 pub const WALL_COUNT: u16 = 347; // WallID.Count
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct Tile {
 	// pub header: [u8; 4], // remove this later
 	pub id: i16, // https://terraria.fandom.com/wiki/Tile_IDs
@@ -295,6 +295,25 @@ pub struct Tile {
 	pub fullbright_wall: bool,
 	pub half_brick: bool,
 	pub slope: u8,
+}
+
+impl Tile {
+	pub fn is(&self, other: &Tile) -> bool {
+		if !(self.slope == other.slope && self.color == other.color
+			&& self.active == other.active && self.in_active == other.in_active
+			&& self.wire_1 == other.wire_1 && self.wire_2 == other.wire_2 && self.wire_3 == other.wire_3
+			&& self.half_brick == other.half_brick && self.actuator == other.actuator && self.slope == other.slope
+			&& self.fullbright_wall == other.fullbright_wall && self.active && self.id == other.id
+			&& self.frame_x == other.frame_x && self.frame_y == other.frame_y && self.wall == other.wall
+			&& self.liquid == other.liquid) {
+			return false
+		}
+
+		self.wall_color == other.wall_color && self.wire_4 == other.wire_4 && self.invisible_block == other.invisible_block && self.invisible_wall == other.invisible_wall
+			&& self.fullbright_block == other.fullbright_block && self.fullbright_wall == other.fullbright_wall
+      // if this.sTileHeader != (int) compTile.sTileHeader || this.active() && ((int) this.type != (int) compTile.type || Main.tileFrameImportant[(int) this.type] && ((int) this.frameX != (int) compTile.frameX || (int) this.frameY != (int) compTile.frameY)) || (int) this.wall != (int) compTile.wall || (int) this.liquid != (int) compTile.liquid)
+      //   return false;
+	}
 }
 
 #[derive(Debug, Clone)]
