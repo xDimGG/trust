@@ -3,7 +3,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use flate2::write::ZlibEncoder;
-use flate2::{Compress, Compression};
+use flate2::{Compress, Compression, FlushCompress};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{Result, AsyncReadExt};
 use tokio::sync::{Mutex, RwLock, broadcast};
@@ -554,7 +554,7 @@ impl Server {
 
 		for y in y_start..y_end {
 			for x in x_start..x_end {
-				let tile = &tiles[x as usize][y as usize];
+				let tile = &tiles[x][y];
 
 				// todo: ensure isTheSameAs is like PartialEq
 				// todo: automate this to use TileID.Sets.AllowsSaveCompressionBatching
@@ -901,8 +901,10 @@ impl Server {
 			}
 		}
 
-		let compress = Compress::new_with_window_bits(Compression::default(), false, 15);
-		let mut out = ZlibEncoder::new_with_compress(vec![], compress);
+		// let mut v = Vec::with_capacity(w.buf.len());
+		let mut out = ZlibEncoder::new_with_compress(vec![], Compress::new(Compression::default(), false));
+		// let mut c = Compress::new(Compression::default(), false);
+		// c.compress_vec(&w.buf[3..], &mut v, FlushCompress::Finish).unwrap();
 		out.write_all(&w.buf[3..]).unwrap();
 
 		Message::Custom(10, out.finish().unwrap())

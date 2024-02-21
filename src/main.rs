@@ -28,8 +28,8 @@ impl Drop for Reader<'_> {
 #[tokio::main]
 async fn main() {
 	let world = World::from_file(Path::new("/Users/angelolloti/Library/Application Support/Terraria/Worlds/Courtyard_of_Grasshoppers.wld")).unwrap();
-	// // let world = World::from_file(Path::new("/mnt/c/Users/Dim/Documents/My Games/Terraria/Worlds/college_is_easy.wld")).unwrap();
-	let srv = Server::new(world, "password");
+	// let world = World::from_file(Path::new("/mnt/c/Users/Dim/Documents/My Games/Terraria/Worlds/college_is_easy.wld")).unwrap();
+	let srv = Server::new(world, "");
 	srv.listen("127.0.0.1:7778").await.unwrap();
 
 	// let world = World::from_file(Path::new("/Users/angelolloti/Library/Application Support/Terraria/Worlds/Courtyard_of_Grasshoppers.wld")).unwrap();
