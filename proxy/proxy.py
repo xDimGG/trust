@@ -24,8 +24,8 @@ def copy(src, dst, prefix):
 			if data[0] == 10:
 				disp_data = zlib.decompress(disp_data, wbits=-15)
 
-			if data[0] not in [13, 22, 23, 82]:
-				print(f'{prefix} ({data[0]}) {disp_data.hex()}')
+			# if data[0] not in [13, 22, 23, 82]:
+			print(f'{prefix} ({data[0]}) {disp_data.hex()}')
 
 			dst.sendall(data_size + data)
 	except Exception as ex:

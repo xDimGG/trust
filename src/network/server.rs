@@ -277,7 +277,7 @@ impl Server {
 				vec![self.get_msg_world_header().await]
 				// todo: Main.SyncAnInvasion
 			}
-			Message::SpawnRequest(_sr) => {
+			Message::SpawnRequest(sr) => {
 				if clients[src].as_ref().unwrap().state != ConnectionState::DetailsReceived {
 					return vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))]
 				}
@@ -294,31 +294,7 @@ impl Server {
 				let sec_x_end = min(sec_x_start + 5, max_sec_x);
 				let sec_y_end = min(sec_y_start + 3, max_sec_y);
 
-				let sec_count = (sec_x_end - sec_x_start) * (sec_y_end - sec_y_start);
-				res.push(Message::SpawnResponse(SpawnResponse {
-					status: sec_count as i32,
-					text: Text(TextMode::LocalizationKey, "LegacyInterface.44".to_owned()),
-					flags: 0,
-				}));
-
-				// List<Point> dontInclude = new List<Point>();
-				// for (int x2 = sec_x_start; x2 < sec_x_end; ++x2)
-				// {
-				// 	for (int y2 = sec_y_start; y2 < sec_y_end; ++y2)
-				// 		dontInclude.Add(new Point(x2, y2));
-				// }
-
-				// for (int x = sec_x_start; x <= send_x_end; ++x)
-				// {
-				// 	for (int y = sec_y_start; y <= send_y_end; ++y)
-				// 	{
-				// 		if (x < sec_x_start || x >= sec_x_end || y < sec_y_start || y >= sec_y_end)
-				// 		{
-				// 			dontInclude.Add(new Point(x, y));
-				// 			++sec_count;
-				// 		}
-				// 	}
-				// }
+				let mut sec_count = 0;
 
 				// List<Point> portalSections;
 				// PortalHelper.SyncPortalsOnPlayerJoin(this.whoAmI, 1, dontInclude, out portalSections);
@@ -330,23 +306,47 @@ impl Server {
 							continue;
 						}
 
+						sec_count += 1;
 						c.loaded_sections[x][y] = true;
 						res.push(self.get_msg_section(x, y).await)
 					}
 				}
 
-				// if !(sr.x < 10 || sr.x > (w.header.width - 10) || sr.y < 10 || sr.y > (w.header.height - 10)) {
-				// 	let sec_x_start  = max(get_section_x(sr.x) - 2, 0);
-				// 	let sec_y_start  = max(get_section_y(sr.y) - 1, 0);
-				// 	let sec_x_end = min(sec_x_start + 5, max_sec_x);
-				// 	let sec_y_end = min(sec_y_start + 3, max_sec_y);
+				if sr.x >= 10 && sr.x <= (w.header.width - 10) && sr.y >= 10 && sr.y <= (w.header.height - 10) {
+					let sec_x_start  = max(get_section_x(sr.x as usize) - 2, 0);
+					let sec_y_start  = max(get_section_y(sr.y as usize) - 1, 0);
+					let sec_x_end = min(sec_x_start + 5, max_sec_x - 1);
+					let sec_y_end = min(sec_y_start + 3, max_sec_y - 1);
 
-				// 	for x in sec_x_start..sec_x_end {
-				// 		for y in sec_y_start..sec_y_end {
-				// 			res.push(self.get_msg_section(x, y).await)
-				// 		}
+					for x in sec_x_start..sec_x_end {
+						for y in sec_y_start..sec_y_end {
+							if c.loaded_sections[x][y] {
+								continue;
+							}
+
+							sec_count += 1;
+							c.loaded_sections[x][y] = true;
+							res.push(self.get_msg_section(x, y).await);
+						}
+					}
+				}
+
+				// for x in 13..=18 {
+				// 	let y = 3;
+				// 	if c.loaded_sections[x][y] {
+				// 		continue;
 				// 	}
+
+				// 	sec_count += 1;
+				// 	c.loaded_sections[x][y] = true;
+				// 	res.push(self.get_msg_section(x, y).await);
 				// }
+
+				res.insert(1, Message::SpawnResponse(SpawnResponse {
+					status: sec_count as i32,
+					text: Text(TextMode::LocalizationKey, "LegacyInterface.44".to_owned()),
+					flags: 0,
+				}));
 
 				// if (flag4) {
 				//   for (int sectionX = x1; sectionX <= num13; ++sectionX) {
@@ -402,8 +402,8 @@ impl Server {
 				}
 
 				res.push(Message::WorldTotals(WorldTotals {
-					good: 0,
-					evil: 6,
+					good: 10,
+					evil: 15,
 					blood: 0,
 				}));
 
@@ -418,7 +418,8 @@ impl Server {
 
 				// todo: implement NPC.SetWorldSpecificMonstersByWorldID and UnifiedRandom or my own random gen
 				res.push(Message::MonsterTypes(MonsterTypes {
-					all: [506, 506, 499, 495, 494, 495],
+					// all: [506, 506, 499, 495, 494, 495],
+					all: [494, 495, 495, 497, 497, 496],
 				}));
 
 				res.push(Message::PlayerSyncDone);
@@ -563,7 +564,7 @@ impl Server {
 					continue;
 				}
 
-				if !(y == y_start && x == x_start) {
+				if y != y_start || x != x_start {
 					if repeat_count > 0 {
 						buf[i] = repeat_count as u8;
 						i += 1;
@@ -653,8 +654,8 @@ impl Server {
 					}
 				}
 
-				if tile.liquid_header > 0 {
-					let (f_1, f_3) = match tile.liquid {
+				if tile.liquid > 0 {
+					let (f_1, f_3) = match tile.liquid_kind {
 						Liquid::Shimmer => (8, 128),
 						Liquid::Lava => (16, 0),
 						Liquid::Honey => (24, 0),
@@ -662,7 +663,7 @@ impl Server {
 					};
 					h_1 |= f_1;
 					h_3 |= f_3;
-					buf[i] = tile.liquid_header;
+					buf[i] = tile.liquid;
 					i += 1;
 				}
 
@@ -798,7 +799,7 @@ impl Server {
 					w.write_i16(entity.y);
 
 					let mut item_flags = 0;
-					for (i, item) in doll.items.iter().rev().enumerate() {
+					for (i, item) in doll.items.iter().enumerate().rev() {
 						if item.id != 0 {
 							item_flags |= 1;
 						}
@@ -809,7 +810,7 @@ impl Server {
 					w.write_byte(item_flags);
 
 					let mut dye_flags = 0;
-					for (i, dye) in doll.dyes.iter().rev().enumerate() {
+					for (i, dye) in doll.dyes.iter().enumerate().rev() {
 						if dye.id != 0 {
 							dye_flags |= 1;
 						}
@@ -857,7 +858,7 @@ impl Server {
 						}
 						flags <<= 1;
 					}
-					for (i, dye) in rack.dyes.iter().rev().enumerate() {
+					for (i, dye) in rack.dyes.iter().enumerate().rev() {
 						if dye.id != 0 {
 							flags |= 1;
 						}

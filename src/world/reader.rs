@@ -198,25 +198,23 @@ impl World {
 		let height = r.read_i32()?;
 		let width = r.read_i32()?;
 
-		let game_mode = if version >= 209 {
-			r.read_i32()?
-		} else if version >= 112 {
-			let mut gm = r.read_bool()? as i32;
-			if version == 208 && r.read_bool()? {
-				gm = 2;
-			}
-			gm
+		let game_mode: GameMode = (if version >= 209 {
+			r.read_i32()? as u8
 		} else {
-			0
-		};
-		let game_mode: GameMode = (game_mode as u8).into();
+			let gm = if version >= 112 { r.read_bool()? as u8 } else { 0 };
+			if version == 208 && r.read_bool()? {
+				2
+			} else {
+				gm
+			}
+		}).into();
 
-		let world_drunk = version >= 227 && r.read_bool()?;
-		let world_for_the_worthy = version >= 238 && r.read_bool()?;
-		let world_anniversary = version >= 239 && r.read_bool()?;
-		let world_dont_starve = version >= 241 && r.read_bool()?;
-		let world_not_the_bees = version >= 249 && r.read_bool()?;
-		let world_remix = version >= 266 && r.read_bool()?;
+		let world_drunk = version >= 222 && r.read_bool()?;
+		let world_for_the_worthy = version >= 227 && r.read_bool()?;
+		let world_anniversary = version >= 238 && r.read_bool()?;
+		let world_dont_starve = version >= 239 && r.read_bool()?;
+		let world_not_the_bees = version >= 241 && r.read_bool()?;
+		let world_remix = version >= 249 && r.read_bool()?;
 		let world_no_traps = version >= 266 && r.read_bool()?;
 		let world_zenith = if version >= 267 { r.read_bool()? } else { world_drunk && world_remix };
 
@@ -620,7 +618,7 @@ impl World {
 				} else { (0, 0) };
 
 				let liquid_bits = (h_1 & 0b11000) >> 3;
-				let (liquid, liquid_header) = if liquid_bits != 0 {
+				let (liquid_kind, liquid) = if liquid_bits > 0 {
 					(if h_3 & 128 == 128 {
 						Liquid::Shimmer // shimmer
 					} else {
@@ -660,7 +658,6 @@ impl World {
 				} else { (false, false, false, false) };
 
 				let tile = Tile{
-					// header: [b_1, b_2, b_3, b_4],
 					id,
 					active,
 					frame_x,
@@ -669,7 +666,7 @@ impl World {
 					wall,
 					wall_color,
 					liquid,
-					liquid_header,
+					liquid_kind,
 					wire_1,
 					wire_2,
 					wire_3,
@@ -684,7 +681,7 @@ impl World {
 					slope,
     		};
 
-				let repeat = match (h_1 & 0b11000000) >> 6 {
+				let repeat = match h_1 >> 6 {
 					0 => 0,
 					1 => r.read_byte()? as i32,
 					_ => r.read_i16()? as i32,
