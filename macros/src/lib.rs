@@ -60,6 +60,7 @@ fn message_decode(input: TokenStream) -> TokenStream {
 		}
 
 		let code: u8 = doc.split_whitespace().skip(1).next().unwrap().parse().unwrap();
+		let custom_read = doc.contains("custom_read");
 
 		match variant.fields {
 			Fields::Named(fields) => {
@@ -71,7 +72,15 @@ fn message_decode(input: TokenStream) -> TokenStream {
 					field_names.push(field.ident.unwrap())
 				}
 
-				cases.push(quote! { #code => Self::#name(#name { #(#field_names: #field_readers),* }) })
+				let extra = if custom_read {
+					quote! { s.read(&mut r) }
+				} else { quote! {} };
+
+				cases.push(quote! { #code => {
+					let mut s = #name { #(#field_names: #field_readers),* };
+					#extra;
+					Self::#name(s)
+				} })
 			},
 			Fields::Unnamed(fields) => {
 				let mut field_readers = Vec::new();
@@ -117,6 +126,8 @@ fn type_to_read_method(s: &str) -> TokenStream2 {
 		"Text" => quote! { r.read_text() },
 		"RGB" => quote! { r.read_rgb() },
 		"Vector2" => quote! { r.read_vector2() },
+		"Vec" => quote! { r.buf[r.cur..].to_vec() },
+		"Option" => quote!{ None },
 		ty => quote! { compile_error!(format!("Unsupported type: {}", #ty)) },
 	}
 }
@@ -248,6 +259,16 @@ fn field_to_write_method(field: &Field, name: TokenStream2) -> TokenStream2 {
 	match &field.ty {
 		Type::Path(ty) => {
 			let p_name = &ty.path.segments.first().unwrap().ident.to_string();
+			let mut write_ignore = false;
+			if let Some(a) = field.attrs.first() {
+				// let args = a.parse_args_with(Attribute::parse_outer).unwrap();
+				// dbg!(args.first().unwrap().span());
+				write_ignore = a.span().source_text().unwrap().contains("#[write_ignore]");
+			}
+			if write_ignore {
+				return quote! {}
+			}
+
 			if p_name == "Vec" || p_name == "Option" {
 				if let PathArguments::AngleBracketed(ab) = &ty.path.segments.first().unwrap().arguments {
 					if let GenericArgument::Type(gt) = &ab.args.first().unwrap() {

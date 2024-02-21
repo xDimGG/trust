@@ -72,6 +72,40 @@ impl Sanitize for PlayerSpawnRequest {
 	}
 }
 
+impl Sanitize for PlayerPickTile {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+	}
+}
+
+impl Sanitize for PlayerKeepItem {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+	}
+}
+
+impl Sanitize for PlayerAction {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+	}
+}
+
+pub trait CustomRead {
+	fn read(&mut self, r: &mut Reader);
+}
+
+impl CustomRead for PlayerAction {
+	fn read(&mut self, r: &mut Reader) {
+		if self.flags_2 & 0b100 != 0 {
+			self.velocity = Some(r.read_vector2());
+		}
+		if self.flags_3 & 0b1000000 != 0 {
+			self.pot_of_ret_origin_position = Some(r.read_vector2());
+			self.pot_of_ret_home_position = Some(r.read_vector2());
+		}
+	}
+}
+
 const MAX_BUFFS: usize = 44; // from Player.maxBuffs
 const AREA_ID_COUNT: usize = 13; // from TreeTopsInfo.AreaId.Count
 
@@ -214,11 +248,47 @@ pub enum Message {
 		deaths_pvp: i16,
 		context: u8, // ReviveFromDeath = 0, SpawningIntoWorld = 1, RecallFromItem = 2
 	},
+	/// 13 <-> custom_read
+	PlayerAction {
+		client_id: u8,
+		flags_1: u8,
+		flags_2: u8,
+		flags_3: u8,
+		flags_4: u8,
+		selected_item: u8,
+		position: Vector2,
+		velocity: Option<Vector2>,
+		pot_of_ret_origin_position: Option<Vector2>,
+		pot_of_ret_home_position: Option<Vector2>,
+	},
 	/// 16 <->
 	PlayerHealth {
 		client_id: u8,
 		current: i16,
 		maximum: i16,
+	},
+	/// 17 <->
+	UpdateTile {
+		action: u8,
+		x: i16,
+		y: i16,
+		target_type: i16,
+		target_style: u8,
+	},
+	/// 21 <->
+	DropItem {
+		id: i16,
+		position: Vector2,
+		velocity: Vector2,
+		stack: i16,
+		prefix: u8,
+		own_ignore: bool,
+		item_id: i16,
+	},
+	/// 22 <->
+	PlayerKeepItem {
+		time: i16,
+		client_id: u8,
 	},
 	/// 23 ->
 	NPCInfo {
@@ -291,6 +361,13 @@ pub enum Message {
 	MoonlordCountdown {
 		maximum: i32,
 		current: i32,
+	},
+	/// 125 <->
+	PlayerPickTile {
+		client_id: u8,
+		x: i16,
+		y: i16,
+		damage: u8,
 	},
 	/// 129 ->
 	PlayerSpawnResponse,

@@ -158,17 +158,17 @@ impl World {
 		}
 
 		let mut importance = vec![false; r.read_u16()? as usize];
-		let mut n1 = 0;
-		let mut n2 = 128;
+		let mut byte = 0;
+		let mut mask = 128;
 		for i in &mut importance {
-			if n2 == 128 {
-				n1 = r.read_byte()?;
-				n2 = 1;
+			if mask == 128 {
+				byte = r.read_byte()?;
+				mask = 1;
 			} else {
-				n2 <<= 1;
+				mask <<= 1;
 			}
 
-			if (n1 & n2) == n2 {
+			if (byte & mask) == mask {
 				*i = true;
 			}
 		}
@@ -782,14 +782,13 @@ impl World {
 			};
 
 			let name = r.read_string()?;
-			let x = r.read_f32()?;
-			let y = r.read_f32()?;
+			let position = r.read_vector2()?;
 			let homeless = r.read_bool()?;
 			let home_x = r.read_i32()?;
 			let home_y = r.read_i32()?;
 			let variation = if version >= 213 && r.read_byte()? & 1 == 1 { r.read_i32()? } else { 0 };
 
-			npcs.push(NPC { id, name, x, y, homeless, home_x, home_y, variation, shimmer: shimmers.contains(&id), position: None })
+			npcs.push(NPC { id, name, position, homeless, home_x, home_y, variation, shimmer: shimmers.contains(&id) })
 		}
 
 		if version >= 140 {
@@ -802,7 +801,7 @@ impl World {
 					todo!("implement NPCID.FromLegacyName(reader.ReadString())")
 				}
 
-				npc.position = Some(r.read_vector2()?)
+				npc.position = r.read_vector2()?
 			}
 		}
 
@@ -859,7 +858,6 @@ impl World {
 						}
 						flags >>= 1;
 					};
-
 
 					for item in &mut rack.dyes {
 						if flags & 1 == 1 {

@@ -11,9 +11,9 @@ use tokio::select;
 use std::sync::Arc;
 
 use crate::binary::writer::Writer;
-use crate::network::messages::{self, Sanitize, Message, ConnectionApprove, WorldHeader, SpawnResponse, NPCInfo, KillCount, WorldTotals, MoonlordCountdown, PillarShieldStrengths, MonsterTypes, AnglerQuest, PlayerSpawnRequest};
+use crate::network::messages::{self, Sanitize, Message, DropItem, ConnectionApprove, WorldHeader, SpawnResponse, NPCInfo, KillCount, WorldTotals, PillarShieldStrengths, MonsterTypes, AnglerQuest};
 use crate::binary::types::{Text, TextMode, Vector2};
-use crate::world::types::{Liquid, Tile, World};
+use crate::world::types::{EntityExtra, Liquid, Tile, World};
 use crate::network::utils::{flags, get_section_x, get_section_y};
 
 use super::utils::{get_tile_x_end, get_tile_x_start, get_tile_y_end, get_tile_y_start};
@@ -21,6 +21,7 @@ use super::utils::{get_tile_x_end, get_tile_x_start, get_tile_y_end, get_tile_y_
 const GAME_VERSION: &str = "Terraria279";
 const MAX_CLIENTS: usize = 256;
 const MAX_NAME_LEN: usize = 20;
+const TILE: f32 = 16.;
 
 #[derive(PartialEq, Eq)]
 #[repr(u8)]
@@ -44,10 +45,11 @@ pub struct Client {
 	pub buffs: Option<messages::PlayerBuffs>,
 	pub loadout: Option<messages::PlayerLoadout>,
 	pub inventory: Arc<Mutex<[Option<messages::PlayerInventorySlot>; MAX_INVENTORY_SLOTS]>>,
+	pub loaded_sections: Vec<Vec<bool>>,
 }
 
 impl Client {
-	fn new(addr: SocketAddr) -> Self {
+	fn new(addr: SocketAddr, width: usize, height: usize) -> Self {
 		// https://github.com/rust-lang/rust/issues/44796#issuecomment-967747810
 		const INIT_SLOT_NONE: Option<messages::PlayerInventorySlot> = None;
 
@@ -61,6 +63,7 @@ impl Client {
 			mana: None,
 			loadout: None,
 			inventory: Arc::new(Mutex::new([INIT_SLOT_NONE; MAX_INVENTORY_SLOTS])),
+			loaded_sections: vec![vec![false; height]; width],
 		}
 	}
 }
@@ -111,7 +114,8 @@ impl Server {
 				Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "CLI.ServerIsFull".to_owned())).write(Pin::new(&mut wh)).await.unwrap();
 				return
 			};
-			clients[id] = Some(Client::new(addr));
+			let world = self.world.read().await;
+			clients[id] = Some(Client::new(addr, get_section_x(world.header.width as usize), get_section_y(world.header.height as usize)));
 			id
 		};
 
@@ -273,27 +277,26 @@ impl Server {
 				vec![self.get_msg_world_header().await]
 				// todo: Main.SyncAnInvasion
 			}
-			Message::SpawnRequest(sr) => {
+			Message::SpawnRequest(_sr) => {
 				if clients[src].as_ref().unwrap().state != ConnectionState::DetailsReceived {
 					return vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))]
 				}
 
 				let w = self.world.read().await;
+				let c = clients[src].as_mut().unwrap();
 				let mut res = vec![self.get_msg_world_header().await];
 
-				let flag_4 = !(sr.x < 10 || sr.x > (w.header.width - 10) || sr.y < 10 || sr.y > (w.header.height - 10));
+				let max_sec_x = get_section_x(w.header.width as usize);
+				let max_sec_y = get_section_y(w.header.height as usize);
 
-				let max_sec_x = get_section_x(w.header.width);
-				let max_sec_y = get_section_x(w.header.height);
-
-				let sec_x_start  = max(get_section_x(w.header.spawn_tile_x) - 2, 0);
-				let sec_y_start  = max(get_section_y(w.header.spawn_tile_y) - 1, 0);
-				let sec_x_end = min(get_section_x(w.header.spawn_tile_x) + 3, max_sec_x);
-				let sec_y_end = min(get_section_y(w.header.spawn_tile_y) + 2, max_sec_y);
+				let sec_x_start  = max(get_section_x(w.header.spawn_tile_x as usize) - 2, 0);
+				let sec_y_start  = max(get_section_y(w.header.spawn_tile_y as usize) - 1, 0);
+				let sec_x_end = min(sec_x_start + 5, max_sec_x);
+				let sec_y_end = min(sec_y_start + 3, max_sec_y);
 
 				let sec_count = (sec_x_end - sec_x_start) * (sec_y_end - sec_y_start);
 				res.push(Message::SpawnResponse(SpawnResponse {
-					status: sec_count,
+					status: sec_count as i32,
 					text: Text(TextMode::LocalizationKey, "LegacyInterface.44".to_owned()),
 					flags: 0,
 				}));
@@ -304,9 +307,6 @@ impl Server {
 				// 	for (int y2 = sec_y_start; y2 < sec_y_end; ++y2)
 				// 		dontInclude.Add(new Point(x2, y2));
 				// }
-
-				let	send_x_end = if flag_4 { sec_x_end } else { -1 };
-				let	send_y_end = if flag_4 { sec_y_end } else { -1 };
 
 				// for (int x = sec_x_start; x <= send_x_end; ++x)
 				// {
@@ -326,9 +326,27 @@ impl Server {
 
 				for x in sec_x_start..sec_x_end {
 					for y in sec_y_start..sec_y_end {
+						if c.loaded_sections[x][y] {
+							continue;
+						}
+
+						c.loaded_sections[x][y] = true;
 						res.push(self.get_msg_section(x, y).await)
 					}
 				}
+
+				// if !(sr.x < 10 || sr.x > (w.header.width - 10) || sr.y < 10 || sr.y > (w.header.height - 10)) {
+				// 	let sec_x_start  = max(get_section_x(sr.x) - 2, 0);
+				// 	let sec_y_start  = max(get_section_y(sr.y) - 1, 0);
+				// 	let sec_x_end = min(sec_x_start + 5, max_sec_x);
+				// 	let sec_y_end = min(sec_y_start + 3, max_sec_y);
+
+				// 	for x in sec_x_start..sec_x_end {
+				// 		for y in sec_y_start..sec_y_end {
+				// 			res.push(self.get_msg_section(x, y).await)
+				// 		}
+				// 	}
+				// }
 
 				// if (flag4) {
 				//   for (int sectionX = x1; sectionX <= num13; ++sectionX) {
@@ -353,7 +371,7 @@ impl Server {
 				for npc in &w.npcs {
 					res.push(Message::NPCInfo(NPCInfo {
 						id: npc.id as i16,
-						position: Vector2(npc.x, npc.y),
+						position: npc.position.clone(),
 						velocity: Vector2(0., 0.),
 						target: 0,
 						flags_1: 0,
@@ -436,6 +454,63 @@ impl Server {
 					Message::PlayerSpawnResponse,
 				]
 			}
+			// This message just gets broadcasted
+			Message::PlayerPickTile(mut ppt) => {
+				ppt.sanitize(src as u8);
+				tx.send((Message::PlayerPickTile(ppt), Some(src))).unwrap();
+				vec![]
+			}
+			Message::UpdateTile(ppt) => {
+				if ppt.action == 0 && ppt.target_type == 0 {
+					let world = self.world.read().await;
+					let tile = &world.tiles[ppt.x as usize][ppt.y as usize];
+					tx.send((Message::DropItem(DropItem {
+						id: 0,
+						position: Vector2(ppt.x as f32 * TILE, ppt.y as f32 * TILE),
+						velocity: Vector2(0., 1.),
+						item_id: tile.id,
+						own_ignore: false,
+						prefix: 0,
+						stack: 1,
+					}), None)).unwrap();
+				}
+				tx.send((Message::UpdateTile(ppt), Some(src))).unwrap();
+				vec![]
+			}
+			Message::PlayerKeepItem(mut pki) => {
+				pki.sanitize(src as u8);
+				tx.send((Message::PlayerKeepItem(pki), None)).unwrap();
+				vec![]
+			}
+			Message::PlayerAction(mut pa) => {
+				pa.sanitize(src as u8);
+				dbg!(&pa);
+
+				let w = self.world.read().await;
+				let c = clients[src].as_mut().unwrap();
+
+				let max_sec_x = get_section_x(w.header.width as usize);
+				let max_sec_y = get_section_y(w.header.height as usize);
+
+				let sec_x_start  = max(get_section_x((pa.position.0 / TILE) as usize) - 1, 0);
+				let sec_y_start  = max(get_section_y((pa.position.1 / TILE) as usize) - 1, 0);
+				let sec_x_end = min(sec_x_start + 1, max_sec_x);
+				let sec_y_end = min(sec_y_start + 1, max_sec_y);
+				let mut tiles = vec![];
+				for x in sec_x_start..sec_x_end {
+					for y in sec_y_start..sec_y_end {
+						if c.loaded_sections[x][y] {
+							continue;
+						}
+
+						c.loaded_sections[x][y] = true;
+						tiles.push(self.get_msg_section(x, y).await)
+					}
+				}
+
+				tx.send((Message::PlayerAction(pa), Some(src))).unwrap();
+				tiles
+			}
 			Message::Custom(code, buf) => {
 				println!("Custom ({}): {:?}", code, buf);
 				vec![]
@@ -447,7 +522,7 @@ impl Server {
 		}
 	}
 
-	async fn get_msg_section(&self, sec_x: i32, sec_y: i32) -> Message {
+	async fn get_msg_section(&self, sec_x: usize, sec_y: usize) -> Message {
 		let x_start = get_tile_x_start(sec_x);
 		let y_start = get_tile_y_start(sec_y);
 		let x_end = get_tile_x_end(sec_x);
@@ -456,10 +531,10 @@ impl Server {
 		// todo: optimize this to reduce data copying
 
 		let mut w = Writer::new(0);
-		w.write_i32(x_start);
-		w.write_i32(y_start);
-		w.write_i16((y_end - y_start) as i16);
+		w.write_i32(x_start as i32);
+		w.write_i32(y_start as i32);
 		w.write_i16((x_end - x_start) as i16);
+		w.write_i16((y_end - y_start) as i16);
 
 		let world = &self.world.read().await;
 		let tiles = &world.tiles;
@@ -467,6 +542,10 @@ impl Server {
 
 		let mut last_tile = &Tile::default();
 		let mut repeat_count: u16 = 0;
+
+		let mut chest_tiles = vec![];
+		let mut sign_tiles = vec![];
+		let mut entity_tiles = vec![];
 
 		let mut buf = [0u8; 16];
 		let mut i = 0;
@@ -518,13 +597,37 @@ impl Server {
 						h_1 |= 32;
 					}
 
-					// determine important tiles
-
-					// todo: make this a variable
-					// HashSet();
-
 					if importance[tile.id as usize] {
-					// if !(tile.frame_x == -1 && tile.frame_y == -1) {
+						let fx = tile.frame_x;
+						let fy = tile.frame_y;
+						let is_chest = match tile.id {
+							21 | 467 => fx % 36 == 0 && fy % 36 == 0,
+							88 => fx % 54 == 0 && fy % 36 == 0,
+							_ => false,
+						};
+						if is_chest {
+							chest_tiles.push((x, y));
+						} else {
+							let is_sign = match tile.id {
+								55 | 85 | 425 | 573 => fx % 36 == 0 && fy % 36 == 0,
+								_ => false,
+							};
+							if is_sign {
+								sign_tiles.push((x, y));
+							} else {
+								let is_entity = match tile.id {
+									378 | 395 | 470 => fx % 36 == 0 && fy == 0,
+									520 => fx % 18 == 0 && fy == 0,
+									471 | 475 => fx % 54 == 0 && fy == 0,
+									597 => fx % 54 == 0 && fy % 72 == 0,
+									_ => false,
+								};
+								if is_entity {
+									entity_tiles.push((x, y));
+								}
+							}
+						}
+
 						[buf[i], buf[i + 1]] = tile.frame_x.to_le_bytes();
 						i += 2;
 						[buf[i], buf[i + 1]] = tile.frame_y.to_le_bytes();
@@ -642,9 +745,161 @@ impl Server {
 		w.write_bytes(buf[j..i].to_vec());
 
 		// todo: send npcs, signs, and portals
-		w.write_i16(0);
-		w.write_i16(0);
-		w.write_i16(0);
+		w.write_i16(chest_tiles.len() as i16);
+		for (x, y) in chest_tiles {
+			let (i, chest) = world.chests.iter().enumerate().find(|(_, c)| c.x as usize == x && c.y as usize == y).unwrap();
+			w.write_i16(i as i16);
+			w.write_i16(x as i16);
+			w.write_i16(y as i16);
+			w.write_string(chest.name.clone());
+		}
+
+		w.write_i16(sign_tiles.len() as i16);
+		for (x, y) in sign_tiles {
+			let (i, sign) = world.signs.iter().enumerate().find(|(_, s)| s.x as usize == x && s.y as usize == y).unwrap();
+			w.write_i16(i as i16);
+			w.write_i16(x as i16);
+			w.write_i16(y as i16);
+			w.write_string(sign.text.clone());
+		}
+
+		w.write_i16(entity_tiles.len() as i16);
+		for (x, y) in entity_tiles {
+			let entity = world.entities.iter().find(|c| c.x == x as i16 && c.y == y as i16).unwrap();
+			match &entity.entity {
+				EntityExtra::Dummy { npc } => {
+					w.write_byte(0);
+					w.write_i32(entity.id);
+					w.write_i16(entity.x);
+					w.write_i16(entity.y);
+					w.write_i16(*npc);
+				},
+				EntityExtra::ItemFrame(frame) => {
+					w.write_byte(1);
+					w.write_i32(entity.id);
+					w.write_i16(entity.x);
+					w.write_i16(entity.y);
+					w.write_i16(frame.id);
+					w.write_byte(frame.prefix);
+					w.write_i16(frame.stack);
+				},
+				EntityExtra::LogicSensor { logic_check, on } => {
+					w.write_byte(2);
+					w.write_i32(entity.id);
+					w.write_i16(entity.x);
+					w.write_i16(entity.y);
+					w.write_byte(*logic_check);
+					w.write_bool(*on);
+				},
+				EntityExtra::DisplayDoll(doll) => {
+					w.write_byte(3);
+					w.write_i32(entity.id);
+					w.write_i16(entity.x);
+					w.write_i16(entity.y);
+
+					let mut item_flags = 0;
+					for (i, item) in doll.items.iter().rev().enumerate() {
+						if item.id != 0 {
+							item_flags |= 1;
+						}
+						if i != 0 {
+							item_flags <<= 1;
+						}
+					}
+					w.write_byte(item_flags);
+
+					let mut dye_flags = 0;
+					for (i, dye) in doll.dyes.iter().rev().enumerate() {
+						if dye.id != 0 {
+							dye_flags |= 1;
+						}
+						if i != 0 {
+							dye_flags <<= 1;
+						}
+					}
+					w.write_byte(dye_flags);
+
+					for item in &doll.items {
+						if item.id != 0 {
+							w.write_i16(item.id);
+							w.write_byte(item.prefix);
+							w.write_i16(item.stack);
+						}
+					}
+
+					for dye in &doll.dyes {
+						if dye.id != 0 {
+							w.write_i16(dye.id);
+							w.write_byte(dye.prefix);
+							w.write_i16(dye.stack);
+						}
+					}
+				},
+				EntityExtra::WeaponsRack(rack) => {
+					w.write_byte(4);
+					w.write_i32(entity.id);
+					w.write_i16(entity.x);
+					w.write_i16(entity.y);
+					w.write_i16(rack.id);
+					w.write_byte(rack.prefix);
+					w.write_i16(rack.stack);
+				},
+				EntityExtra::HatRack(rack) => {
+					w.write_byte(5);
+					w.write_i32(entity.id);
+					w.write_i16(entity.x);
+					w.write_i16(entity.y);
+
+					let mut flags = 0;
+					for item in rack.items.iter().rev() {
+						if item.id != 0 {
+							flags |= 1;
+						}
+						flags <<= 1;
+					}
+					for (i, dye) in rack.dyes.iter().rev().enumerate() {
+						if dye.id != 0 {
+							flags |= 1;
+						}
+						if i != 0 {
+							flags <<= 1;
+						}
+					}
+					w.write_byte(flags);
+
+					for item in &rack.items {
+						if item.id != 0 {
+							w.write_i16(item.id);
+							w.write_byte(item.prefix);
+							w.write_i16(item.stack);
+						}
+					}
+
+					for dye in &rack.dyes {
+						if dye.id != 0 {
+							w.write_i16(dye.id);
+							w.write_byte(dye.prefix);
+							w.write_i16(dye.stack);
+						}
+					}
+				},
+				EntityExtra::FoodPlatter(platter) => {
+					w.write_byte(6);
+					w.write_i32(entity.id);
+					w.write_i16(entity.x);
+					w.write_i16(entity.y);
+					w.write_i16(platter.id);
+					w.write_byte(platter.prefix);
+					w.write_i16(platter.stack);
+				},
+				EntityExtra::TeleportationPylon => {
+					w.write_byte(7);
+					w.write_i32(entity.id);
+					w.write_i16(entity.x);
+					w.write_i16(entity.y);
+				},
+			}
+		}
 
 		let compress = Compress::new_with_window_bits(Compression::default(), false, 15);
 		let mut out = ZlibEncoder::new_with_compress(vec![], compress);

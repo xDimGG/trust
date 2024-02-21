@@ -323,14 +323,12 @@ pub struct Sign {
 pub struct NPC {
 	pub id: i32,
 	pub name: String,
-	pub x: f32,
-	pub y: f32,
+	pub position: Vector2,
 	pub homeless: bool,
 	pub shimmer: bool,
 	pub home_x: i32,
 	pub home_y: i32,
 	pub variation: i32,
-	pub position: Option<Vector2>,
 }
 
 #[derive(Debug, Clone)]
