@@ -2,18 +2,31 @@ use crate::binary::types::{Text, RGB, Vector2};
 
 pub struct Writer {
 	pub buf: Vec<u8>,
+	message: bool,
 }
 
 #[allow(dead_code)]
 impl Writer {
-	pub fn new(code: u8) -> Self {
-		Self { buf: vec![0, 0, code] }
+	pub fn new() -> Self {
+		Self {
+			buf: vec![],
+			message: false,
+		}
+	}
+
+	pub fn new_message(code: u8) -> Self {
+		Self {
+			buf: vec![0, 0, code],
+			message: true,
+		}
 	}
 
 	pub fn finalize(mut self) -> Vec<u8> {
-		let [a, b] = (self.buf.len() as u16).to_le_bytes();
-		self.buf[0] = a;
-		self.buf[1] = b;
+		if self.message {
+			let [a, b] = (self.buf.len() as u16).to_le_bytes();
+			self.buf[0] = a;
+			self.buf[1] = b;
+		}
 		self.buf
 	}
 

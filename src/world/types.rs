@@ -1,7 +1,10 @@
-use std::{fmt, io, str::{self, Utf8Error}};
+use std::{error::Error, fmt, io, str::{self, Utf8Error}};
 
 use crate::binary::types::Vector2;
 use crate::world::tile::Tile;
+use crate::world::entity::Entity;
+
+use super::binary::FileReader;
 
 #[derive(PartialEq, Debug, Clone)]
 #[repr(u8)]
@@ -46,19 +49,21 @@ impl From<u8> for GameMode {
 pub const MAGIC_STRING: &[u8] = "relogic".as_bytes();
 
 #[derive(Debug)]
-pub enum WorldParseError {
+pub enum WorldDecodeError {
 	UnexpectedEOI,
 	InvalidNumber,
 	BadFileSignature,
 	ExpectedWorldType,
 	InvalidFooter,
+	InvalidEntityKind,
+	InvalidCreativePower,
 	InvalidString(Utf8Error),
 	PositionCheckFailed(String),
 	UnsupportedVersion(i32),
 	FSError(io::Error),
 }
 
-impl fmt::Display for WorldParseError {
+impl fmt::Display for WorldDecodeError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::UnexpectedEOI => write!(f, "Expected more data but reached end of input"),
@@ -67,12 +72,16 @@ impl fmt::Display for WorldParseError {
 			Self::BadFileSignature => write!(f, "Invalid file signature (expecting \"{}\")", str::from_utf8(MAGIC_STRING).unwrap()),
 			Self::ExpectedWorldType => write!(f, "Expected file type to be world file"),
 			Self::InvalidFooter => write!(f, "Footer of file does not match header"),
+			Self::InvalidEntityKind => write!(f, "Entity kind is not recognized"),
+			Self::InvalidCreativePower => write!(f, "Creative power is not recognized"),
 			Self::PositionCheckFailed(s) => write!(f, "Position of buffer cursor does not match metadata position for field {}", s),
 			Self::UnsupportedVersion(v) => write!(f, "Unsupported file version: {}", v),
 			Self::FSError(err) => write!(f, "Got FS error: {}", err),
 		}
 	}
 }
+
+impl Error for WorldDecodeError {}
 
 #[derive(Debug, Clone)]
 pub struct World {
@@ -133,8 +142,8 @@ pub struct Header {
 	pub ice_back_style: i32,
 	pub jungle_back_style: i32,
 	pub hell_back_style: i32,
-	pub spawn_tile_x: i32,
-	pub spawn_tile_y: i32,
+	pub spawn_x: i32,
+	pub spawn_y: i32,
 	pub world_surface: f64,
 	pub rock_layer: f64,
 	pub temp_time: f64,
@@ -270,7 +279,6 @@ pub struct Format {
 	pub positions: Vec<i32>,
 }
 
-
 pub const WALL_COUNT: u16 = 347; // WallID.Count
 
 #[derive(Debug, Clone)]
@@ -308,50 +316,6 @@ pub struct NPC {
 }
 
 #[derive(Debug, Clone)]
-pub struct Entity {
-	pub id: i32,
-	pub x: i16,
-	pub y: i16,
-	pub entity: EntityExtra,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct DisplayDoll {
-	pub items: [EntityItem; 8],
-	pub dyes: [EntityItem; 8],
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct HatRack {
-	pub items: [EntityItem; 2],
-	pub dyes: [EntityItem; 2],
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct EntityItem {
-	pub id: i16,
-	pub stack: i16,
-	pub prefix: u8,
-}
-
-#[derive(Debug, Clone)]
-pub enum EntityExtra {
-	Dummy {
-		npc: i16,
-	},
-	ItemFrame(EntityItem),
-	LogicSensor {
-		logic_check: u8,
-		on: bool,
-	},
-	DisplayDoll(DisplayDoll),
-	WeaponsRack(EntityItem),
-	HatRack(HatRack),
-	FoodPlatter(EntityItem),
-	TeleportationPylon,
-}
-
-#[derive(Debug, Clone)]
 pub struct WeightedPressurePlate {
 	pub x: i32,
 	pub y: i32,
@@ -366,7 +330,7 @@ pub struct RoomLocation {
 
 #[derive(Debug, Clone)]
 pub struct Bestiary {
-	pub kills: Vec<(String, i32)>, // npc id, kill count pair
+	pub kills: Vec<(String, i32)>, // (npc id, kill count)
 	pub sights: Vec<String>, // npc IDs
 	pub chats: Vec<String>, // npc IDs
 }
@@ -388,4 +352,27 @@ pub enum CreativePower {
 	DifficultySliderPower(f32),
 	StopBiomeSpreadPower(bool),
 	SpawnRateSliderPerPlayerPower,
+}
+
+impl CreativePower {
+	pub fn decode_file(r: &mut FileReader) -> Result<CreativePower, WorldDecodeError> {
+		match r.read_i16()? {
+			0 => Ok(CreativePower::FreezeTime(r.read_bool()?)),
+			1 => Ok(CreativePower::StartDayImmediately),
+			2 => Ok(CreativePower::StartNoonImmediately),
+			3 => Ok(CreativePower::StartNightImmediately),
+			4 => Ok(CreativePower::StartMidnightImmediately),
+			5 => Ok(CreativePower::GodmodePower),
+			6 => Ok(CreativePower::ModifyWindDirectionAndStrength),
+			7 => Ok(CreativePower::ModifyRainPower),
+			8 => Ok(CreativePower::ModifyTimeRate(r.read_f32()?)),
+			9 => Ok(CreativePower::FreezeRainPower(r.read_bool()?)),
+			10 => Ok(CreativePower::FreezeWindDirectionAndStrength(r.read_bool()?)),
+			11 => Ok(CreativePower::FarPlacementRangePower),
+			12 => Ok(CreativePower::DifficultySliderPower(r.read_f32()?)),
+			13 => Ok(CreativePower::StopBiomeSpreadPower(r.read_bool()?)),
+			14 => Ok(CreativePower::SpawnRateSliderPerPlayerPower),
+			_ => Err(WorldDecodeError::InvalidCreativePower),
+		}
+	}
 }

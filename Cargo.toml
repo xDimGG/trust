@@ -12,3 +12,4 @@ flate2 = "1.0"
 directories = "5.0"
 filetime = "0.2"
 macros = { path = "macros" }
+anyhow = "1.0"

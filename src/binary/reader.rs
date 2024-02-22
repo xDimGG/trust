@@ -29,35 +29,35 @@ impl<'a> Reader<'a> {
 	}
 
 	pub fn read_u16(&mut self) -> u16 {
-		u16::from_le_bytes(self.read_bytes(2).try_into().unwrap())
+		u16::from_le_bytes(self.read_bytes(2).try_into().unwrap_or([0; 2]))
 	}
 
 	pub fn read_i16(&mut self) -> i16 {
-		i16::from_le_bytes(self.read_bytes(2).try_into().unwrap())
+		i16::from_le_bytes(self.read_bytes(2).try_into().unwrap_or([0; 2]))
 	}
 
 	pub fn read_u32(&mut self) -> u32 {
-		u32::from_le_bytes(self.read_bytes(4).try_into().unwrap())
+		u32::from_le_bytes(self.read_bytes(4).try_into().unwrap_or([0; 4]))
 	}
 
 	pub fn read_i32(&mut self) -> i32 {
-		i32::from_le_bytes(self.read_bytes(4).try_into().unwrap())
+		i32::from_le_bytes(self.read_bytes(4).try_into().unwrap_or([0; 4]))
 	}
 
 	pub fn read_u64(&mut self) -> u64 {
-		u64::from_le_bytes(self.read_bytes(8).try_into().unwrap())
+		u64::from_le_bytes(self.read_bytes(8).try_into().unwrap_or([0; 8]))
 	}
 
 	pub fn read_i64(&mut self) -> i64 {
-		i64::from_le_bytes(self.read_bytes(8).try_into().unwrap())
+		i64::from_le_bytes(self.read_bytes(8).try_into().unwrap_or([0; 8]))
 	}
 
 	pub fn read_f32(&mut self) -> f32 {
-		f32::from_le_bytes(self.read_bytes(4).try_into().unwrap())
+		f32::from_le_bytes(self.read_bytes(4).try_into().unwrap_or([0; 4]))
 	}
 
 	pub fn read_f64(&mut self) -> f64 {
-		f64::from_le_bytes(self.read_bytes(8).try_into().unwrap())
+		f64::from_le_bytes(self.read_bytes(8).try_into().unwrap_or([0; 8]))
 	}
 
 	pub fn read_length(&mut self) -> usize {

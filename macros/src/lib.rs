@@ -60,7 +60,7 @@ fn message_decode(input: TokenStream) -> TokenStream {
 		}
 
 		let code: u8 = doc.split_whitespace().skip(1).next().unwrap().parse().unwrap();
-		let custom_read = doc.contains("custom_read");
+		let custom_decode = doc.contains("custom_decode");
 
 		match variant.fields {
 			Fields::Named(fields) => {
@@ -68,12 +68,12 @@ fn message_decode(input: TokenStream) -> TokenStream {
 				let mut field_readers = Vec::new();
 
 				for field in fields.named {
-					field_readers.push(field_to_read_method(&field));
+					field_readers.push(field_to_reader_method(&field));
 					field_names.push(field.ident.unwrap())
 				}
 
-				let extra = if custom_read {
-					quote! { s.read(&mut r) }
+				let extra = if custom_decode {
+					quote! { s.decode(&mut r) }
 				} else { quote! {} };
 
 				cases.push(quote! { #code => {
@@ -86,7 +86,7 @@ fn message_decode(input: TokenStream) -> TokenStream {
 				let mut field_readers = Vec::new();
 
 				for field in fields.unnamed {
-					field_readers.push(field_to_read_method(&field))
+					field_readers.push(field_to_reader_method(&field))
 				}
 
 				cases.push(quote! { #code => Self::#name(#(#field_readers),*) })
@@ -109,7 +109,7 @@ fn message_decode(input: TokenStream) -> TokenStream {
 	})
 }
 
-fn type_to_read_method(s: &str) -> TokenStream2 {
+fn type_to_reader_method(s: &str) -> TokenStream2 {
 	match s {
 		"bool" => quote! { r.read_bool() },
 		"u8" => quote! { r.read_byte() },
@@ -132,16 +132,16 @@ fn type_to_read_method(s: &str) -> TokenStream2 {
 	}
 }
 
-fn field_to_read_method(field: &Field) -> TokenStream2 {
+fn field_to_reader_method(field: &Field) -> TokenStream2 {
 	match &field.ty {
 		Type::Path(ty) => {
-			type_to_read_method(&ty.path.segments.first().unwrap().ident.to_string())
+			type_to_reader_method(&ty.path.segments.first().unwrap().ident.to_string())
 		},
 		Type::Array(ty) => {
 			if let Type::Path(at) = &*ty.elem {
 				let len = &ty.len;
 				let ident = &at.path.segments.first().unwrap().ident;
-				let method = type_to_read_method(ident.to_string().as_str());
+				let method = type_to_reader_method(ident.to_string().as_str());
 				quote! { {
 					let mut buf = [#ident::default(); #len];
 					for num in &mut buf {
@@ -180,12 +180,12 @@ fn message_encode(input: TokenStream) -> TokenStream {
 
 				for field in fields.named {
 					let name = field.ident.as_ref().unwrap();
-					methods.push(field_to_write_method(&field, quote! { data.#name }))
+					methods.push(field_to_writer_method(&field, quote! { data.#name }))
 				}
 
 				cases.push(quote! {
 					Message::#name(data) => {
-						let mut w = Writer::new(#code);
+						let mut w = Writer::new_message(#code);
 						#(#methods);*;
 						Ok(w.finalize())
 			 		}
@@ -197,44 +197,44 @@ fn message_encode(input: TokenStream) -> TokenStream {
 
 				for (i, field) in fields.unnamed.iter().enumerate() {
 					let i = format_ident!("field{}", i);
-					methods.push(field_to_write_method(field, quote! { #i }));
+					methods.push(field_to_writer_method(field, quote! { #i }));
 					args.push(quote! { #i })
 				}
 
 				cases.push(quote! {
 					Message::#name(#(#args),*) => {
-						let mut w = Writer::new(#code);
+						let mut w = Writer::new_message(#code);
 						#(#methods);*;
 						Ok(w.finalize())
 			 		}
 				})
 			},
 			Fields::Unit => cases.push(quote! {
-				Message::#name => Ok(Writer::new(#code).finalize()),
+				Message::#name => Ok(Writer::new_message(#code).finalize()),
 			}),
 		};
 	}
 
 	TokenStream::from(quote! {
 		impl TryFrom<Message> for Vec<u8> {
-			type Error = &'static str;
+			type Error = MessageDecodeError;
 
 			fn try_from(msg: Message) -> Result<Self, Self::Error> {
 				match msg {
 					#(#cases)*
 					Message::Custom(code, buf) => {
-						let mut w = Writer::new(code);
+						let mut w = Writer::new_message(code);
 						w.write_bytes(buf.clone());
 						Ok(w.finalize())
 					}
-					_ => Err("Unserializable message. Consider using Message::Custom"),
+					_ => Err(MessageDecodeError::Unserializable),
 				}
 			}
 		}
 	})
 }
 
-fn type_to_write_method(s: &str, arg: TokenStream2) -> TokenStream2 {
+fn type_to_writer_method(s: &str, arg: TokenStream2) -> TokenStream2 {
 	match s {
 		"bool" => quote! { w.write_bool(#arg) },
 		"u8" => quote! { w.write_byte(#arg) },
@@ -255,7 +255,7 @@ fn type_to_write_method(s: &str, arg: TokenStream2) -> TokenStream2 {
 	}
 }
 
-fn field_to_write_method(field: &Field, name: TokenStream2) -> TokenStream2 {
+fn field_to_writer_method(field: &Field, name: TokenStream2) -> TokenStream2 {
 	match &field.ty {
 		Type::Path(ty) => {
 			let p_name = &ty.path.segments.first().unwrap().ident.to_string();
@@ -274,7 +274,7 @@ fn field_to_write_method(field: &Field, name: TokenStream2) -> TokenStream2 {
 					if let GenericArgument::Type(gt) = &ab.args.first().unwrap() {
 						if let Type::Path(gtp) = gt {
 							let ident = &gtp.path.segments.first().unwrap().ident.to_string();
-							let method = type_to_write_method(ident.as_str(), quote! { x });
+							let method = type_to_writer_method(ident.as_str(), quote! { x });
 							match p_name.as_str() {
 								"Vec" => quote! {
 									for x in #name {
@@ -292,13 +292,13 @@ fn field_to_write_method(field: &Field, name: TokenStream2) -> TokenStream2 {
 					} else { quote! { compile_error!("Unsupported type") } }
 				} else { quote! { compile_error!("Unsupported type") } }
 			} else {
-				type_to_write_method(ty.path.segments.first().unwrap().ident.to_string().as_str(), name)
+				type_to_writer_method(ty.path.segments.first().unwrap().ident.to_string().as_str(), name)
 			}
 		},
 		Type::Array(ty) => {
 			if let Type::Path(at) = &*ty.elem {
 				let ident = &at.path.segments.first().unwrap().ident;
-				let method = type_to_write_method(ident.to_string().as_str(), quote! { x });
+				let method = type_to_writer_method(ident.to_string().as_str(), quote! { x });
 				quote! {
 					for x in #name {
 						#method

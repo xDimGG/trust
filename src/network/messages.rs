@@ -1,13 +1,14 @@
 use macros::message_encoder_decoder;
 use crate::binary::types::{Text, Vector2, RGB};
-use crate::binary::writer::Writer;
 use crate::binary::reader::Reader;
+use crate::binary::writer::Writer;
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use std::convert::{TryFrom, TryInto};
+use std::error::Error;
 use std::pin::Pin;
-use std::str;
+use std::io;
 
 pub trait Sanitize {
 	fn sanitize(&mut self, src: u8);
@@ -78,7 +79,7 @@ impl Sanitize for PlayerPickTile {
 	}
 }
 
-impl Sanitize for PlayerKeepItem {
+impl Sanitize for PlayerReserveItem {
 	fn sanitize(&mut self, src: u8) {
 		self.client_id = src;
 	}
@@ -90,12 +91,24 @@ impl Sanitize for PlayerAction {
 	}
 }
 
-pub trait CustomRead {
-	fn read(&mut self, r: &mut Reader);
+impl Sanitize for PlayInstrument {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+	}
 }
 
-impl CustomRead for PlayerAction {
-	fn read(&mut self, r: &mut Reader) {
+impl Sanitize for PlayerTalkNPC {
+	fn sanitize(&mut self, src: u8) {
+		self.client_id = src;
+	}
+}
+
+pub trait CustomDecode {
+	fn decode(&mut self, r: &mut Reader);
+}
+
+impl CustomDecode for PlayerAction {
+	fn decode(&mut self, r: &mut Reader) {
 		if self.flags_2 & 0b100 != 0 {
 			self.velocity = Some(r.read_vector2());
 		}
@@ -248,7 +261,7 @@ pub enum Message {
 		deaths_pvp: i16,
 		context: u8, // ReviveFromDeath = 0, SpawningIntoWorld = 1, RecallFromItem = 2
 	},
-	/// 13 <-> custom_read
+	/// 13 <-> custom_decode
 	PlayerAction {
 		client_id: u8,
 		flags_1: u8,
@@ -286,7 +299,7 @@ pub enum Message {
 		item_id: i16,
 	},
 	/// 22 <->
-	PlayerKeepItem {
+	PlayerReserveItem {
 		time: i16,
 		client_id: u8,
 	},
@@ -312,6 +325,13 @@ pub enum Message {
 	PasswordRequest,
 	/// 38 <-
 	PasswordResponse(String),
+	/// 39 ->
+	DereserveItem(i16),
+	/// 40 <->
+	PlayerTalkNPC {
+		client_id: u8,
+		npc: i16,
+	},
 	/// 42 <-
 	PlayerMana {
 		client_id: u8,
@@ -330,6 +350,16 @@ pub enum Message {
 		good: u8,
 		evil: u8,
 		blood: u8,
+	},
+	/// 58 <->
+	PlayInstrument {
+		client_id: u8,
+		pitch: f32,
+	},
+	/// 59 <->
+	ToggleSwitch {
+		x: i16,
+		y: i16,
 	},
 	/// 68 <-
 	UUID(String),
@@ -372,9 +402,9 @@ pub enum Message {
 	/// 129 ->
 	PlayerSpawnResponse,
 	/// 136 ->
-	MonsterTypes {
-		all: [u16; 6],
-	},
+	MonsterTypes([u16; 6]),
+	/// 138 <-
+	InventorySynced,
 	/// 147 <->
 	PlayerLoadout {
 		client_id: u8,
@@ -385,9 +415,26 @@ pub enum Message {
 	Custom(u8, Vec<u8>),
 }
 
+#[derive(Debug)]
+pub enum MessageDecodeError {
+	Unserializable,
+	IO(io::Error),
+}
+
+impl std::fmt::Display for MessageDecodeError {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Self::Unserializable => write!(f, "Unserializable enum variant."),
+			Self::IO(e) => write!(f, "Got IO error: {}", e),
+		}
+	}
+}
+
+impl Error for MessageDecodeError {}
+
 impl Message {
-	pub async fn write(self, mut stream: Pin<&mut impl AsyncWrite>) -> Result<usize, &str> {
+	pub async fn write(self, mut stream: Pin<&mut impl AsyncWrite>) -> Result<usize, MessageDecodeError> {
 		let buffer: Vec<u8> = self.try_into()?;
-		stream.write(&buffer).await.map_err(|_| "Error while writing")
+		stream.write(&buffer).await.map_err(MessageDecodeError::IO)
 	}
 }

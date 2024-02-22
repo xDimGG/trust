@@ -1,16 +1,17 @@
 use std::{collections::HashSet, fs, path::Path};
-use crate::world::binary::SafeReader;
+use crate::world::binary::FileReader;
 use crate::world::types::*;
 use crate::world::tile::*;
+use crate::world::entity::*;
 
 impl World {
-	pub fn from_file(path: &Path) -> Result<World, WorldParseError> {
-		let contents = fs::read(path).map_err(WorldParseError::FSError)?;
-		let mut reader = SafeReader::new(contents);
+	pub fn from_file(path: &Path) -> Result<World, WorldDecodeError> {
+		let contents = fs::read(path).map_err(WorldDecodeError::FSError)?;
+		let mut reader = FileReader::new(contents);
 		let mut world = Self::from_reader(&mut reader)?;
 
 		if world.metadata.version < 141 {
-			let file_metadata = fs::metadata(path).map_err(WorldParseError::FSError)?;
+			let file_metadata = fs::metadata(path).map_err(WorldDecodeError::FSError)?;
 			if let Some(ft) = filetime::FileTime::from_creation_time(&file_metadata) {
 				world.header.creation_time = ft.unix_seconds()
 			}
@@ -22,7 +23,7 @@ impl World {
 	// TODO: implement Crc32 to get seed_text value
 	// TODO: implement C# system.datetime.frombinary for parsing ticks
 
-	pub fn from_reader(r: &mut SafeReader) -> Result<World, WorldParseError> {
+	pub fn from_reader(r: &mut FileReader) -> Result<World, WorldDecodeError> {
 		let version = r.read_i32()?;
 		if version >= 88 {
 			Self::read_world_v2(r)
@@ -31,37 +32,37 @@ impl World {
 		}
 	} 
 
-	pub fn read_world_v2(r: &mut SafeReader) -> Result<World, WorldParseError> {
+	pub fn read_world_v2(r: &mut FileReader) -> Result<World, WorldDecodeError> {
 		r.seek(0);
 		let metadata = Self::read_metadata(r)?;
 		let format = Self::read_format(r)?;
 		if r.get_cur() != format.positions[0] as usize {
-			return Err(WorldParseError::PositionCheckFailed("format".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("format".to_owned()))
 		}
 
 		let header = Self::read_header(r, &metadata)?;
 		if r.get_cur() != format.positions[1] as usize {
-			return Err(WorldParseError::PositionCheckFailed("header".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("header".to_owned()))
 		}
 
 		let tiles = Self::read_tiles(r, &format, &header)?;
 		if r.get_cur() != format.positions[2] as usize {
-			return Err(WorldParseError::PositionCheckFailed("tiles".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("tiles".to_owned()))
 		}
 
 		let chests = Self::read_chests(r)?;
 		if r.get_cur() != format.positions[3] as usize {
-			return Err(WorldParseError::PositionCheckFailed("chests".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("chests".to_owned()))
 		}
 
 		let signs = Self::read_signs(r, &tiles)?;
 		if r.get_cur() != format.positions[4] as usize {
-			return Err(WorldParseError::PositionCheckFailed("signs".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("signs".to_owned()))
 		}
 
 		let npcs = Self::read_npcs(r, &metadata)?;
 		if r.get_cur() != format.positions[5] as usize {
-			return Err(WorldParseError::PositionCheckFailed("npcs".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("npcs".to_owned()))
 		}
 
 		let version = metadata.version;
@@ -74,7 +75,7 @@ impl World {
 			};
 
 			if r.get_cur() != format.positions[6] as usize {
-				return Err(WorldParseError::PositionCheckFailed("entities".to_owned()))
+				return Err(WorldDecodeError::PositionCheckFailed("entities".to_owned()))
 			}
 
 			te
@@ -83,7 +84,7 @@ impl World {
 		let weighted_pressure_plates = if version >= 170 {
 			let wpp = Self::read_weighted_pressure_plates(r)?;
 			if r.get_cur() != format.positions[7] as usize {
-				return Err(WorldParseError::PositionCheckFailed("weighted_pressure_plates".to_owned()))
+				return Err(WorldDecodeError::PositionCheckFailed("weighted_pressure_plates".to_owned()))
 			}
 
 			wpp
@@ -92,7 +93,7 @@ impl World {
 		let room_locations = if version >= 189 {
 			let rl = Self::read_room_locations(r)?;
 			if r.get_cur() != format.positions[8] as usize {
-				return Err(WorldParseError::PositionCheckFailed("room_locations".to_owned()))
+				return Err(WorldDecodeError::PositionCheckFailed("room_locations".to_owned()))
 			}
 
 			rl
@@ -101,7 +102,7 @@ impl World {
 		let bestiary = if version >= 210 {
 			let be = Self::read_bestiary(r)?;
 			if r.get_cur() != format.positions[9] as usize {
-				return Err(WorldParseError::PositionCheckFailed("bestiary".to_owned()))
+				return Err(WorldDecodeError::PositionCheckFailed("bestiary".to_owned()))
 			}
 
 			be
@@ -110,7 +111,7 @@ impl World {
 		let creative_powers = if version >= 220 {
 			let be = Self::read_creative_powers(r)?;
 			if r.get_cur() != format.positions[10] as usize {
-				return Err(WorldParseError::PositionCheckFailed("creative_powers".to_owned()))
+				return Err(WorldDecodeError::PositionCheckFailed("creative_powers".to_owned()))
 			}
 
 			be
@@ -119,16 +120,16 @@ impl World {
 		if Self::validate_footer(r, &header)? {
 			Ok(World { metadata, format, header, tiles, chests, signs, npcs, entities, weighted_pressure_plates, room_locations, bestiary, creative_powers })
 		} else {
-			Err(WorldParseError::InvalidFooter)
+			Err(WorldDecodeError::InvalidFooter)
 		}
 	}
 
-	pub fn read_metadata(r: &mut SafeReader) -> Result<Metadata, WorldParseError> {
+	pub fn read_metadata(r: &mut FileReader) -> Result<Metadata, WorldDecodeError> {
 		let version = r.read_i32()?;
 		let (file_type, revision, favorite) = if version >= 135 {
 			let magic = r.read_bytes(7)?;
 			if magic != MAGIC_STRING {
-				return Err(WorldParseError::BadFileSignature)
+				return Err(WorldDecodeError::BadFileSignature)
 			}
 
 			(FileType::from(r.read_byte()?), r.read_u32()?, (r.read_u64()? & 1) == 1)
@@ -137,11 +138,11 @@ impl World {
 		};
 
 		if file_type != FileType::World {
-			return Err(WorldParseError::ExpectedWorldType)
+			return Err(WorldDecodeError::ExpectedWorldType)
 		}
 
 		if version > 279 {
-			return Err(WorldParseError::UnsupportedVersion(version))
+			return Err(WorldDecodeError::UnsupportedVersion(version))
 		}
 
 		Ok(Metadata {
@@ -152,7 +153,7 @@ impl World {
 		})
 	}
 
-	pub fn read_format(r: &mut SafeReader) -> Result<Format, WorldParseError> {
+	pub fn read_format(r: &mut FileReader) -> Result<Format, WorldDecodeError> {
 		let mut positions = vec![0; r.read_i16()? as usize];
 		for p in &mut positions {
 			*p = r.read_i32()?;
@@ -177,7 +178,7 @@ impl World {
 		Ok(Format { positions, importance })
 	}
 
-	pub fn read_header(r: &mut SafeReader, metadata: &Metadata) -> Result<Header, WorldParseError> {
+	pub fn read_header(r: &mut FileReader, metadata: &Metadata) -> Result<Header, WorldDecodeError> {
 		let version = metadata.version;
 		let name = r.read_string()?;
 		let (seed_text, worldgen_version) = if version >= 179 {
@@ -450,8 +451,8 @@ impl World {
 			ice_back_style,
 			jungle_back_style,
 			hell_back_style,
-			spawn_tile_x,
-			spawn_tile_y,
+			spawn_x: spawn_tile_x,
+			spawn_y: spawn_tile_y,
 			world_surface,
 			rock_layer,
 			temp_time,
@@ -582,112 +583,14 @@ impl World {
 		})
 	}
 
-	pub fn read_tiles(r: &mut SafeReader, format: &Format, header: &Header) -> Result<Vec<Vec<Tile>>, WorldParseError> {
+	pub fn read_tiles(r: &mut FileReader, format: &Format, header: &Header) -> Result<Vec<Vec<Tile>>, WorldDecodeError> {
 		let mut map = Vec::with_capacity(header.width as usize);
 		for _ in 0..header.width {
 			let mut column = Vec::with_capacity(header.height as usize);
 			let mut y = 0;
-			while y < header.height {
+			while y < header.height as usize {
 				// Header bytes
-				let h_1 = r.read_byte()?;
-				let h_2 = if h_1 & 1 == 1 { r.read_byte()? } else { 0 };
-				let h_3 = if h_2 & 1 == 1 { r.read_byte()? } else { 0 };
-				let h_4 = if h_3 & 1 == 1 { r.read_byte()? } else { 0 };
-
-				let (active, id, frame_x, frame_y, color) = if h_1 & 2 == 2 {
-					let id = if h_1 & 32 == 32 {
-						r.read_i16()?
-					} else {
-						r.read_byte()? as i16
-					};
-
-					let (x, y) = if format.importance[id as usize] {
-						let x = r.read_i16()?;
-						let y = r.read_i16()?;
-						(x, if id == 144 { 0 } else { y })
-					} else { (-1, -1) };
-
-					let col = if h_3 & 8 == 8 { r.read_byte()? } else { 0 };
-
-					(true, id, x, y, col)
-				} else {
-					(false, -1, 0, 0, 0)
-				};
-
-				let (wall, wall_color) = if h_1 & 4 == 4 {
-					(r.read_byte()? as u16, if h_3 & 16 == 16 { r.read_byte()? as u16 } else { 0 })
-				} else { (0, 0) };
-
-				let liquid_bits = (h_1 & 0b11000) >> 3;
-				let (liquid_kind, liquid) = if liquid_bits > 0 {
-					(if h_3 & 128 == 128 {
-						Liquid::Shimmer // shimmer
-					} else {
-						match liquid_bits {
-							2 => Liquid::Lava, // lava
-							3 => Liquid::Honey, // honey
-							_ => Liquid::Water, // water?
-						}
-					}, r.read_byte()?)
-				} else {
-					(Liquid::None, 0)
-				};
-
-				let (wire_1, wire_2, wire_3, half_brick, slope) = if h_2 > 1 {
-					let n_9 = (h_2 & 0b1110000) >> 4;
-					// todo: add check for Main.tileSolid[(int) tile.type] || TileID.Sets.NonSolidSaveSlopes[(int) tile.type])
-					let (hb, sl) = if n_9 != 0 {
-						(n_9 == 1, n_9 - 1)
-					} else { (false, 0) };
-					(h_2 & 2 == 2, h_2 & 4 == 4, h_2 & 8 == 8, hb, sl)
-				} else { (false, false, false, false, 0) };
-
-				let (actuator, in_active, wire_4, wall) = if h_3 > 1 {
-					let wall_extended = if h_3 & 64 == 64 {
-						let new_wall = (r.read_byte()? as u16) << 8 | wall;
-						if new_wall < WALL_COUNT {
-							new_wall
-						} else {
-							0
-						}
-					} else { wall };
-					(h_3 & 2 == 2, h_3 & 4 == 4, h_3 & 32 == 32, wall_extended)
-				} else { (false, false, false, wall) };
-
-				let (invisible_block, invisible_wall, fullbright_block, fullbright_wall) = if h_4 > 1 {
-					(h_4 & 2 == 2, h_4 & 4 == 4, h_4 & 8 == 8, h_4 & 16 == 16)
-				} else { (false, false, false, false) };
-
-				let tile = Tile{
-					id,
-					active,
-					frame_x,
-					frame_y,
-					color,
-					wall,
-					wall_color,
-					liquid,
-					liquid_kind,
-					wire_1,
-					wire_2,
-					wire_3,
-					wire_4,
-					actuator,
-					in_active,
-					invisible_block,
-					invisible_wall,
-					fullbright_block,
-					fullbright_wall,
-					half_brick,
-					slope,
-    		};
-
-				let repeat = match h_1 >> 6 {
-					0 => 0,
-					1 => r.read_byte()? as i32,
-					_ => r.read_i16()? as i32,
-				};
-
+				let (tile, repeat) = Tile::decode(r, format)?;
 				for _ in 0..repeat {
 					column.push(tile.clone());
 				}
@@ -702,7 +605,7 @@ impl World {
 		Ok(map)
 	}
 
-	pub fn read_chests(r: &mut SafeReader) -> Result<Vec<Chest>, WorldParseError> {
+	pub fn read_chests(r: &mut FileReader) -> Result<Vec<Chest>, WorldDecodeError> {
 		let mut chests = Vec::with_capacity(r.read_i16()? as usize);
 
 		let n_2 = r.read_i16()?;
@@ -743,7 +646,7 @@ impl World {
 		Ok(chests)
 	}
 
-	pub fn read_signs(r: &mut SafeReader, tiles: &[Vec<Tile>]) -> Result<Vec<Sign>, WorldParseError> {
+	pub fn read_signs(r: &mut FileReader, tiles: &[Vec<Tile>]) -> Result<Vec<Sign>, WorldDecodeError> {
 		let mut signs = Vec::with_capacity(r.read_i16()? as usize);
 	
 		for _ in 0..signs.capacity() {
@@ -761,7 +664,7 @@ impl World {
 		Ok(signs)
 	}
 
-	pub fn read_npcs(r: &mut SafeReader, metadata: &Metadata) -> Result<Vec<NPC>, WorldParseError> {
+	pub fn read_npcs(r: &mut FileReader, metadata: &Metadata) -> Result<Vec<NPC>, WorldDecodeError> {
 		let version = metadata.version;
 		let mut shimmers = HashSet::new();
 		if version >= 268 {
@@ -806,80 +709,16 @@ impl World {
 		Ok(npcs)
 	}
 
-	pub fn read_entities(r: &mut SafeReader) -> Result<Vec<Entity>, WorldParseError> {
+	pub fn read_entities(r: &mut FileReader) -> Result<Vec<Entity>, WorldDecodeError> {
 		let mut entities = Vec::with_capacity(r.read_i32()? as usize);
 		for _ in 0..entities.capacity() {
-			let entity_type = r.read_byte()?;
-			let id = r.read_i32()?;
-			let x = r.read_i16()?;
-			let y = r.read_i16()?;
-
-			let entity = match entity_type {
-				0 => EntityExtra::Dummy { npc: r.read_i16()? },
-				1 => EntityExtra::ItemFrame(EntityItem { id: r.read_i16()?, prefix: r.read_byte()?, stack: r.read_i16()? }),
-				2 => EntityExtra::LogicSensor { logic_check: r.read_byte()?, on: r.read_bool()? },
-				3 => {
-					let mut doll = DisplayDoll::default();
-					let mut item_flags = r.read_byte()?;
-					let mut dye_flags = r.read_byte()?;
-
-					for item in &mut doll.items {
-						if item_flags & 1 == 1 {
-							item.id = r.read_i16()?;
-							item.prefix = r.read_byte()?;
-							item.stack = r.read_i16()?;
-						}
-						item_flags >>= 1;
-					};
-
-					for item in &mut doll.dyes {
-						if dye_flags & 1 == 1 {
-							item.id = r.read_i16()?;
-							item.prefix = r.read_byte()?;
-							item.stack = r.read_i16()?;
-						}
-						dye_flags >>= 1;
-					};
-
-					EntityExtra::DisplayDoll(doll)
-				}
-				4 => EntityExtra::WeaponsRack(EntityItem { id: r.read_i16()?, prefix: r.read_byte()?, stack: r.read_i16()? }),
-				5 => {
-					let mut rack = HatRack::default();
-					let mut flags = r.read_byte()?;
-
-					for item in &mut rack.items {
-						if flags & 1 == 1 {
-							item.id = r.read_i16()?;
-							item.prefix = r.read_byte()?;
-							item.stack = r.read_i16()?;
-						}
-						flags >>= 1;
-					};
-
-					for item in &mut rack.dyes {
-						if flags & 1 == 1 {
-							item.id = r.read_i16()?;
-							item.prefix = r.read_byte()?;
-							item.stack = r.read_i16()?;
-						}
-						flags >>= 1;
-					};
-
-					EntityExtra::HatRack(rack)
-				}
-				6 => EntityExtra::FoodPlatter(EntityItem { id: r.read_i16()?, prefix: r.read_byte()?, stack: r.read_i16()? }),
-				7 => EntityExtra::TeleportationPylon,
-				_ => { continue; },
-			};
-
-			entities.push(Entity { id, x, y, entity })
+			entities.push(Entity::decode(r)?)
 		}
 
 		Ok(entities)
 	}
 
-	pub fn read_weighted_pressure_plates(r: &mut SafeReader) -> Result<Vec<WeightedPressurePlate>, WorldParseError> {
+	pub fn read_weighted_pressure_plates(r: &mut FileReader) -> Result<Vec<WeightedPressurePlate>, WorldDecodeError> {
 		let mut wpp = Vec::with_capacity(r.read_i32()? as usize);
 		for _ in 0..wpp.capacity() {
 			wpp.push(WeightedPressurePlate {
@@ -891,7 +730,7 @@ impl World {
 		Ok(wpp)
 	}
 
-	pub fn read_room_locations(r: &mut SafeReader) -> Result<Vec<RoomLocation>, WorldParseError> {
+	pub fn read_room_locations(r: &mut FileReader) -> Result<Vec<RoomLocation>, WorldDecodeError> {
 		let mut rl = Vec::with_capacity(r.read_i32()? as usize);
 		for _ in 0..rl.capacity() {
 			rl.push(RoomLocation {
@@ -904,7 +743,7 @@ impl World {
 		Ok(rl)
 	}
 
-	pub fn read_bestiary(r: &mut SafeReader) -> Result<Bestiary, WorldParseError> {
+	pub fn read_bestiary(r: &mut FileReader) -> Result<Bestiary, WorldDecodeError> {
 		let mut kills = Vec::with_capacity(r.read_i32()? as usize);
 		for _ in 0..kills.capacity() {
 			kills.push((r.read_string()?, r.read_i32()?));
@@ -923,34 +762,17 @@ impl World {
 		Ok(Bestiary { kills, sights, chats })
 	}
 
-	pub fn read_creative_powers(r: &mut SafeReader) -> Result<Vec<CreativePower>, WorldParseError> {
+	pub fn read_creative_powers(r: &mut FileReader) -> Result<Vec<CreativePower>, WorldDecodeError> {
 		let mut powers = vec![];
 		while r.read_bool()? {
-			let power = match r.read_i16()? {
-				0 => CreativePower::FreezeTime(r.read_bool()?),
-				1 => CreativePower::StartDayImmediately,
-				2 => CreativePower::StartNoonImmediately,
-				3 => CreativePower::StartNightImmediately,
-				4 => CreativePower::StartMidnightImmediately,
-				5 => CreativePower::GodmodePower,
-				6 => CreativePower::ModifyWindDirectionAndStrength,
-				7 => CreativePower::ModifyRainPower,
-				8 => CreativePower::ModifyTimeRate(r.read_f32()?),
-				9 => CreativePower::FreezeRainPower(r.read_bool()?),
-				10 => CreativePower::FreezeWindDirectionAndStrength(r.read_bool()?),
-				11 => CreativePower::FarPlacementRangePower,
-				12 => CreativePower::DifficultySliderPower(r.read_f32()?),
-				13 => CreativePower::StopBiomeSpreadPower(r.read_bool()?),
-				14 => CreativePower::SpawnRateSliderPerPlayerPower,
-				_ => { continue; }
-			};
+			let power = CreativePower::decode_file(r)?;
 			powers.push(power);
 		}
 
 		Ok(powers)
 	}
 
-	pub fn validate_footer(r: &mut SafeReader, header: &Header) -> Result<bool, WorldParseError> {
+	pub fn validate_footer(r: &mut FileReader, header: &Header) -> Result<bool, WorldDecodeError> {
 		Ok(r.read_bool()? && r.read_string()? == header.name && r.read_i32()? == header.id)
 	}
 }
