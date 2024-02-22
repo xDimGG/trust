@@ -1,19 +1,19 @@
-REAL = './log_man_real.txt'
-TRUST = './log_man_mine.txt'
+REAL = './dim_real.txt'
+TRUST = './dim_fake.txt'
 START = '[s->c]: (10) '
 HEADER = (4 + 4 + 2 + 2) * 2
 
 sections = {}
-c = 0
 
 for line in open(REAL).readlines():
+	line = line.strip().replace('\0', '')
 	if line.startswith(START):
-		rest = line.strip()[len(START):]
+		rest = line[len(START):]
 		head = rest[:HEADER]
+		print(head)
 		if head in sections:
 			print(head, 'appears more than once')
 		sections[head] = rest
-		c += 1
 
 def compare(head, real, fake):
 	if real == fake:
@@ -27,7 +27,7 @@ def compare(head, real, fake):
 			break
 
 for line in open(TRUST).readlines():
-	line = line.strip()
+	line = line.strip().replace('\0', '')
 	if line.startswith(START):
 		rest = line[len(START):]
 		head = rest[:HEADER]

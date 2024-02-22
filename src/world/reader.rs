@@ -1,6 +1,7 @@
 use std::{collections::HashSet, fs, path::Path};
 use crate::world::binary::SafeReader;
 use crate::world::types::*;
+use crate::world::tile::*;
 
 impl World {
 	pub fn from_file(path: &Path) -> Result<World, WorldParseError> {

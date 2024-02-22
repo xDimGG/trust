@@ -1,6 +1,7 @@
 use std::{fmt, io, str::{self, Utf8Error}};
 
 use crate::binary::types::Vector2;
+use crate::world::tile::Tile;
 
 #[derive(PartialEq, Debug, Clone)]
 #[repr(u8)]
@@ -269,53 +270,8 @@ pub struct Format {
 	pub positions: Vec<i32>,
 }
 
+
 pub const WALL_COUNT: u16 = 347; // WallID.Count
-
-#[derive(Debug, Clone, Default)]
-pub struct Tile {
-	// pub header: [u8; 4], // remove this later
-	pub id: i16, // https://terraria.fandom.com/wiki/Tile_IDs
-	pub active: bool,
-	pub frame_x: i16,
-	pub frame_y: i16,
-	pub color: u8,
-	pub wall: u16,
-	pub wall_color: u16,
-	pub liquid: u8,
-	pub liquid_kind: Liquid,
-	pub wire_1: bool,
-	pub wire_2: bool,
-	pub wire_3: bool,
-	pub wire_4: bool,
-	pub actuator: bool,
-	pub in_active: bool,
-	pub invisible_block: bool,
-	pub invisible_wall: bool,
-	pub fullbright_block: bool,
-	pub fullbright_wall: bool,
-	pub half_brick: bool,
-	pub slope: u8,
-}
-
-impl Tile {
-	pub fn is(&self, other: &Tile) -> bool {
-		// if self.active && !() {
-		// 	return false
-		// }
-
-		self.wall_color == other.wall_color && self.wire_4 == other.wire_4
-			&& self.invisible_block == other.invisible_block && self.invisible_wall == other.invisible_wall
-			&& self.fullbright_block == other.fullbright_block && self.fullbright_wall == other.fullbright_wall
-			&& self.slope == other.slope && self.color == other.color
-			&& self.active == other.active && self.in_active == other.in_active
-			&& self.wire_1 == other.wire_1 && self.wire_2 == other.wire_2 && self.wire_3 == other.wire_3
-			&& self.half_brick == other.half_brick && self.actuator == other.actuator
-			&& self.id == other.id && self.liquid == other.liquid && self.liquid_kind == other.liquid_kind
-			&& self.frame_x == other.frame_x && self.frame_y == other.frame_y && self.wall == other.wall
-      // if this.sTileHeader != (int) compTile.sTileHeader || this.active() && ((int) this.type != (int) compTile.type || Main.tileFrameImportant[(int) this.type] && ((int) this.frameX != (int) compTile.frameX || (int) this.frameY != (int) compTile.frameY)) || (int) this.wall != (int) compTile.wall || (int) this.liquid != (int) compTile.liquid)
-      //   return false;
-	}
-}
 
 #[derive(Debug, Clone)]
 pub struct Chest {
@@ -432,14 +388,4 @@ pub enum CreativePower {
 	DifficultySliderPower(f32),
 	StopBiomeSpreadPower(bool),
 	SpawnRateSliderPerPlayerPower,
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub enum Liquid {
-	Water,
-	Lava,
-	Honey,
-	Shimmer,
-	#[default]
-	None,
 }

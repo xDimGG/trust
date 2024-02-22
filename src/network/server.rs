@@ -13,7 +13,8 @@ use std::sync::Arc;
 use crate::binary::writer::Writer;
 use crate::network::messages::{self, Sanitize, Message, DropItem, ConnectionApprove, WorldHeader, SpawnResponse, NPCInfo, KillCount, WorldTotals, PillarShieldStrengths, MonsterTypes, AnglerQuest};
 use crate::binary::types::{Text, TextMode, Vector2};
-use crate::world::types::{EntityExtra, Liquid, Tile, World};
+use crate::world::types::{EntityExtra, World};
+use crate::world::tile::Tile;
 use crate::network::utils::{flags, get_section_x, get_section_y};
 
 use super::utils::{get_tile_x_end, get_tile_x_start, get_tile_y_end, get_tile_y_start};
@@ -331,19 +332,20 @@ impl Server {
 					}
 				}
 
-				// for x in 13..=18 {
-				// 	let y = 3;
-				// 	if c.loaded_sections[x][y] {
-				// 		continue;
-				// 	}
+				for x in 18..=22 {
+					for y in 1..=3 {
+						if c.loaded_sections[x][y] {
+							continue;
+						}
 
-				// 	sec_count += 1;
-				// 	c.loaded_sections[x][y] = true;
-				// 	res.push(self.get_msg_section(x, y).await);
-				// }
+						sec_count += 1;
+						c.loaded_sections[x][y] = true;
+						res.push(self.get_msg_section(x, y).await);
+					}
+				}
 
 				res.insert(1, Message::SpawnResponse(SpawnResponse {
-					status: sec_count as i32,
+					status: sec_count,
 					text: Text(TextMode::LocalizationKey, "LegacyInterface.44".to_owned()),
 					flags: 0,
 				}));
@@ -368,13 +370,14 @@ impl Server {
 				// }
 
 				// Send all NPCs
-				for npc in &w.npcs {
+				// todo: use real npc slots
+				for (id, npc) in w.npcs.iter().enumerate() {
 					res.push(Message::NPCInfo(NPCInfo {
-						id: npc.id as i16,
+						id: id as i16,
 						position: npc.position.clone(),
 						velocity: Vector2(0., 0.),
 						target: 0,
-						flags_1: 0,
+						flags_1: 128,
 						flags_2: 0,
 						npc_ai: vec![],
 						id_2: npc.id as i16,
@@ -385,9 +388,10 @@ impl Server {
 						life_i16: None,
 						life_i32: None,
 						release_owner: None,
-					}))
+					}));
 				}
 
+				// todo: add actual projectile data
 				// for (int number6 = 0; number6 < 1000; ++number6) {
 				// 	if (Main.projectile[number6].active && (Main.projPet[Main.projectile[number6].type] || Main.projectile[number6].netImportant))
 				// 		NetMessage.TrySendData(27, this.whoAmI, number: number6);
@@ -418,8 +422,7 @@ impl Server {
 
 				// todo: implement NPC.SetWorldSpecificMonstersByWorldID and UnifiedRandom or my own random gen
 				res.push(Message::MonsterTypes(MonsterTypes {
-					// all: [506, 506, 499, 495, 494, 495],
-					all: [494, 495, 495, 497, 497, 496],
+					all: [506, 506, 499, 495, 494, 495],
 				}));
 
 				res.push(Message::PlayerSyncDone);
@@ -539,213 +542,68 @@ impl Server {
 
 		let world = &self.world.read().await;
 		let tiles = &world.tiles;
-		let importance = &world.format.importance;
 
 		let mut last_tile = &Tile::default();
-		let mut repeat_count: u16 = 0;
+		let mut repeat_count = 0;
 
 		let mut chest_tiles = vec![];
 		let mut sign_tiles = vec![];
 		let mut entity_tiles = vec![];
 
-		let mut buf = [0u8; 16];
-		let mut i = 0;
-		let mut j = 0;
-		let mut h_1 = 0;
-
 		for y in y_start..y_end {
 			for x in x_start..x_end {
 				let tile = &tiles[x][y];
 
-				// todo: ensure isTheSameAs is like PartialEq
-				// todo: automate this to use TileID.Sets.AllowsSaveCompressionBatching
-				if tile.is(last_tile) && tile.id != 423 && tile.id != 520 {
-					repeat_count += 1;
-					continue;
-				}
-
-				if y != y_start || x != x_start {
-					if repeat_count > 0 {
-						buf[i] = repeat_count as u8;
-						i += 1;
-						if repeat_count > u8::MAX as u16 {
-							h_1 |= 128;
-							buf[i] = (repeat_count >> 8) as u8;
-							i += 1
-						} else {
-							h_1 |= 64;
-						}
+				if !(x == x_start && y == y_start) {
+					// todo: ensure isTheSameAs is like PartialEq
+					// todo: automate this to use TileID.Sets.AllowsSaveCompressionBatching
+					if tile == last_tile && tile.id != 423 && tile.id != 520 {
+						repeat_count += 1;
+						continue;
 					}
 
-					buf[j] = h_1;
-					w.write_bytes(buf[j..i].to_vec());
+					w.write_bytes(last_tile.encode(repeat_count, &world.format));
 					repeat_count = 0;
 				}
 
-				i = 4;
-				let mut h_2 = 0;
-				let mut h_3 = 0;
-				let mut h_4 = 0;
-				h_1 = 0;
+				last_tile = tile;
 
-				if tile.active {
-					h_1 |= 2;
-					buf[i] = tile.id as u8;
-					i += 1;
-					if tile.id > u8::MAX as i16 {
-						buf[i] = (tile.id >> 8) as u8;
-						i += 1;
-						h_1 |= 32;
-					}
-
-					if importance[tile.id as usize] {
-						let fx = tile.frame_x;
-						let fy = tile.frame_y;
-						let is_chest = match tile.id {
-							21 | 467 => fx % 36 == 0 && fy % 36 == 0,
-							88 => fx % 54 == 0 && fy % 36 == 0,
+				if tile.id >= 0 && world.format.importance[tile.id as usize] {
+					let fx = tile.frame_x;
+					let fy = tile.frame_y;
+					let is_chest = match tile.id {
+						21 | 467 => fx % 36 == 0 && fy % 36 == 0,
+						88 => fx % 54 == 0 && fy % 36 == 0,
+						_ => false,
+					};
+					if is_chest {
+						chest_tiles.push((x, y));
+					} else {
+						let is_sign = match tile.id {
+							55 | 85 | 425 | 573 => fx % 36 == 0 && fy % 36 == 0,
 							_ => false,
 						};
-						if is_chest {
-							chest_tiles.push((x, y));
+						if is_sign {
+							sign_tiles.push((x, y));
 						} else {
-							let is_sign = match tile.id {
-								55 | 85 | 425 | 573 => fx % 36 == 0 && fy % 36 == 0,
+							let is_entity = match tile.id {
+								378 | 395 | 470 => fx % 36 == 0 && fy == 0,
+								520 => fx % 18 == 0 && fy == 0,
+								471 | 475 => fx % 54 == 0 && fy == 0,
+								597 => fx % 54 == 0 && fy % 72 == 0,
 								_ => false,
 							};
-							if is_sign {
-								sign_tiles.push((x, y));
-							} else {
-								let is_entity = match tile.id {
-									378 | 395 | 470 => fx % 36 == 0 && fy == 0,
-									520 => fx % 18 == 0 && fy == 0,
-									471 | 475 => fx % 54 == 0 && fy == 0,
-									597 => fx % 54 == 0 && fy % 72 == 0,
-									_ => false,
-								};
-								if is_entity {
-									entity_tiles.push((x, y));
-								}
+							if is_entity {
+								entity_tiles.push((x, y));
 							}
 						}
-
-						[buf[i], buf[i + 1]] = tile.frame_x.to_le_bytes();
-						i += 2;
-						[buf[i], buf[i + 1]] = tile.frame_y.to_le_bytes();
-						i += 2;
-					}
-
-					if tile.color > 0 {
-						h_3 |= 8;
-						buf[i] = tile.color;
-						i += 1;
 					}
 				}
-
-				if tile.wall > 0 {
-					h_1 |= 4;
-					buf[i] = tile.wall as u8;
-					i += 1;
-
-					if tile.wall_color > 0 {
-						h_3 |= 16;
-						buf[i] = tile.wall_color as u8;
-						i += 1;
-					}
-				}
-
-				if tile.liquid > 0 {
-					let (f_1, f_3) = match tile.liquid_kind {
-						Liquid::Shimmer => (8, 128),
-						Liquid::Lava => (16, 0),
-						Liquid::Honey => (24, 0),
-						_ => (8, 0),
-					};
-					h_1 |= f_1;
-					h_3 |= f_3;
-					buf[i] = tile.liquid;
-					i += 1;
-				}
-
-				if tile.wire_1 {
-					h_4 |= 2;
-				}
-				if tile.wire_2 {
-					h_4 |= 4;
-				}
-				if tile.wire_3 {
-					h_4 |= 8;
-				}
-				if tile.half_brick {
-					h_4 |= 16;
-				} else if tile.slope > 0 {
-					h_4 |= (tile.slope + 1) << 4;
-				}
-				if tile.actuator {
-					h_3 |= 2;
-				}
-				if tile.in_active {
-					h_3 |= 4;
-				}
-				if tile.wire_4 {
-					h_3 |= 32;
-				}
-
-				if tile.wall > u8::MAX as u16 {
-					h_3 |= 64;
-					buf[i] = (tile.wall >> 8) as u8;
-					i += 1;
-				}
-
-				if tile.invisible_block {
-					h_2 |= 2;
-				}
-				if tile.invisible_wall {
-					h_2 |= 4;
-				}
-				if tile.fullbright_block {
-					h_2 |= 8;
-				}
-				if tile.fullbright_wall {
-					h_2 |= 16;
-				}
-				j = 3;
-				if h_2 > 0 {
-					h_3 |= 1;
-					buf[j] = h_2;
-					j -= 1;
-				}
-				if h_3 > 0 {
-					h_4 |= 1;
-					buf[j] = h_3;
-					j -= 1;
-				}
-				if h_4 > 0 {
-					h_1 |= 1;
-					buf[j] = h_4;
-					j -= 1;
-				}
-
-				last_tile = tile;
 			}
 		}
 
-		if repeat_count > 0 {
-			buf[i] = repeat_count as u8;
-			i += 1;
-			if repeat_count > u8::MAX as u16 {
-				h_1 |= 128;
-				buf[i] = (repeat_count >> 8) as u8;
-				i += 1
-			} else {
-				h_1 |= 64;
-			}
-		}
+		w.write_bytes(last_tile.encode(repeat_count, &world.format));
 
-		buf[j] = h_1;
-		w.write_bytes(buf[j..i].to_vec());
-
-		// todo: send npcs, signs, and portals
 		w.write_i16(chest_tiles.len() as i16);
 		for (x, y) in chest_tiles {
 			let (i, chest) = world.chests.iter().enumerate().find(|(_, c)| c.x as usize == x && c.y as usize == y).unwrap();
