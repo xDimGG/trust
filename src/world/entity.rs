@@ -1,3 +1,5 @@
+use std::io::{self, Write};
+
 use crate::world::binary::FileReader;
 use crate::binary::writer::Writer;
 use crate::world::types::WorldDecodeError;
@@ -61,12 +63,12 @@ impl Entity {
 		})
 	}
 
-	pub fn write(&self, w: &mut Writer) {
-		w.write_byte(self.inner.kind()); // reserve first byte for later
-		w.write_i32(self.id);
-		w.write_i16(self.x);
-		w.write_i16(self.y);
-		self.inner.write(w);
+	pub fn write<T: Write>(&self, w: &mut Writer<T>) -> io::Result<()> {
+		w.write_byte(self.inner.kind())?; // reserve first byte for later
+		w.write_i32(self.id)?;
+		w.write_i16(self.x)?;
+		w.write_i16(self.y)?;
+		self.inner.write(w)
 	}
 }
 
@@ -84,18 +86,18 @@ impl EntityInner {
 		}
 	}
 
-	pub fn write(&self, w: &mut Writer) {
+	pub fn write<T: Write>(&self, w: &mut Writer<T>) -> io::Result<()> {
 		match self {
 			EntityInner::Dummy { npc } => {
 				w.write_i16(*npc)
 			},
 			EntityInner::ItemFrame(frame) => {
-				w.write_i16(frame.id);
-				w.write_byte(frame.prefix);
+				w.write_i16(frame.id)?;
+				w.write_byte(frame.prefix)?;
 				w.write_i16(frame.stack)
 			},
 			EntityInner::LogicSensor { logic_check, on } => {
-				w.write_byte(*logic_check);
+				w.write_byte(*logic_check)?;
 				w.write_bool(*on)
 			},
 			EntityInner::DisplayDoll(doll) => {
@@ -108,7 +110,7 @@ impl EntityInner {
 						item_flags <<= 1;
 					}
 				}
-				w.write_byte(item_flags);
+				w.write_byte(item_flags)?;
 
 				let mut dye_flags = 0;
 				for (i, dye) in doll.dyes.iter().enumerate().rev() {
@@ -119,27 +121,29 @@ impl EntityInner {
 						dye_flags <<= 1;
 					}
 				}
-				w.write_byte(dye_flags);
+				w.write_byte(dye_flags)?;
 
 				for item in &doll.items {
 					if item.id != 0 {
-						w.write_i16(item.id);
-						w.write_byte(item.prefix);
-						w.write_i16(item.stack);
+						w.write_i16(item.id)?;
+						w.write_byte(item.prefix)?;
+						w.write_i16(item.stack)?;
 					}
 				}
 
 				for dye in &doll.dyes {
 					if dye.id != 0 {
-						w.write_i16(dye.id);
-						w.write_byte(dye.prefix);
-						w.write_i16(dye.stack);
+						w.write_i16(dye.id)?;
+						w.write_byte(dye.prefix)?;
+						w.write_i16(dye.stack)?
 					}
 				}
+
+				Ok(())
 			},
 			EntityInner::WeaponsRack(rack) => {
-				w.write_i16(rack.id);
-				w.write_byte(rack.prefix);
+				w.write_i16(rack.id)?;
+				w.write_byte(rack.prefix)?;
 				w.write_i16(rack.stack)
 			},
 			EntityInner::HatRack(rack) => {
@@ -158,31 +162,33 @@ impl EntityInner {
 						flags <<= 1;
 					}
 				}
-				w.write_byte(flags);
+				w.write_byte(flags)?;
 
 				for item in &rack.items {
 					if item.id != 0 {
-						w.write_i16(item.id);
-						w.write_byte(item.prefix);
-						w.write_i16(item.stack);
+						w.write_i16(item.id)?;
+						w.write_byte(item.prefix)?;
+						w.write_i16(item.stack)?;
 					}
 				}
 
 				for dye in &rack.dyes {
 					if dye.id != 0 {
-						w.write_i16(dye.id);
-						w.write_byte(dye.prefix);
-						w.write_i16(dye.stack);
+						w.write_i16(dye.id)?;
+						w.write_byte(dye.prefix)?;
+						w.write_i16(dye.stack)?
 					}
 				}
+
+				Ok(())
 			},
 			EntityInner::FoodPlatter(platter) => {
-				w.write_i16(platter.id);
-				w.write_byte(platter.prefix);
-				w.write_i16(platter.stack);
+				w.write_i16(platter.id)?;
+				w.write_byte(platter.prefix)?;
+				w.write_i16(platter.stack)
 			},
-			_ => {},
-		};
+			EntityInner::TeleportationPylon => Ok(()),
+		}
 	}
 
 	pub fn decode(r: &mut FileReader, kind: u8) -> Result<Self, WorldDecodeError> {

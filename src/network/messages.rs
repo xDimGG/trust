@@ -1,14 +1,15 @@
 use macros::message_encoder_decoder;
 use crate::binary::types::{Text, Vector2, RGB};
 use crate::binary::reader::Reader;
-use crate::binary::writer::Writer;
+use crate::binary::writer::MessageWriter;
+use std::io::Cursor;
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use std::convert::{TryFrom, TryInto};
 use std::error::Error;
 use std::pin::Pin;
 use std::io;
+use std::io::{Write, Seek};
 
 pub trait Sanitize {
 	fn sanitize(&mut self, src: u8);
@@ -288,6 +289,13 @@ pub enum Message {
 		target_type: i16,
 		target_style: u8,
 	},
+	/// 18 -> (not used)
+	UpdateTime {
+		day_time: bool,
+		time: i32,
+		sun_mod_y: i16,
+		moon_mod_y: i16,
+	},
 	/// 21 <->
 	DropItem {
 		id: i16,
@@ -415,6 +423,14 @@ pub enum Message {
 	Custom(u8, Vec<u8>),
 }
 
+impl Message {
+	pub async fn write_stream(self, mut stream: Pin<&mut impl AsyncWrite>) -> Result<usize, MessageDecodeError> {
+		let mut c = Cursor::new(vec![]);
+		self.write(&mut c)?;
+		stream.write(&c.into_inner()).await.map_err(MessageDecodeError::IO)
+	}
+}
+
 #[derive(Debug)]
 pub enum MessageDecodeError {
 	Unserializable,
@@ -432,9 +448,8 @@ impl std::fmt::Display for MessageDecodeError {
 
 impl Error for MessageDecodeError {}
 
-impl Message {
-	pub async fn write(self, mut stream: Pin<&mut impl AsyncWrite>) -> Result<usize, MessageDecodeError> {
-		let buffer: Vec<u8> = self.try_into()?;
-		stream.write(&buffer).await.map_err(MessageDecodeError::IO)
+impl From<io::Error> for MessageDecodeError {
+	fn from(err: io::Error) -> Self {
+		Self::IO(err)
 	}
 }

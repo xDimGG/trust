@@ -185,9 +185,10 @@ fn message_encode(input: TokenStream) -> TokenStream {
 
 				cases.push(quote! {
 					Message::#name(data) => {
-						let mut w = Writer::new_message(#code);
+						let mut mw = MessageWriter::new(buf, #code)?;
+						let mut w = mw.inner_mut();
 						#(#methods);*;
-						Ok(w.finalize())
+						Ok(mw.finalize()?)
 			 		}
 				})
 			},
@@ -203,29 +204,32 @@ fn message_encode(input: TokenStream) -> TokenStream {
 
 				cases.push(quote! {
 					Message::#name(#(#args),*) => {
-						let mut w = Writer::new_message(#code);
+						let mut mw = MessageWriter::new(buf, #code)?;
+						let mut w = mw.inner_mut();
 						#(#methods);*;
-						Ok(w.finalize())
+						Ok(mw.finalize()?)
 			 		}
 				})
 			},
 			Fields::Unit => cases.push(quote! {
-				Message::#name => Ok(Writer::new_message(#code).finalize()),
+				Message::#name => {
+					let mut mw = MessageWriter::new(buf, #code)?;
+						Ok(mw.finalize()?)
+				},
 			}),
 		};
 	}
 
 	TokenStream::from(quote! {
-		impl TryFrom<Message> for Vec<u8> {
-			type Error = MessageDecodeError;
-
-			fn try_from(msg: Message) -> Result<Self, Self::Error> {
-				match msg {
+		impl Message {
+			pub fn write<T: Write + Seek>(self, buf: T) -> Result<(), MessageDecodeError> {
+				match self {
 					#(#cases)*
-					Message::Custom(code, buf) => {
-						let mut w = Writer::new_message(code);
-						w.write_bytes(buf.clone());
-						Ok(w.finalize())
+					Message::Custom(code, raw) => {
+						let mut mw = MessageWriter::new(buf, code)?;
+						let mut w = mw.inner_mut();
+						w.write_all(&raw)?;
+						Ok(mw.finalize()?)
 					}
 					_ => Err(MessageDecodeError::Unserializable),
 				}
@@ -236,21 +240,21 @@ fn message_encode(input: TokenStream) -> TokenStream {
 
 fn type_to_writer_method(s: &str, arg: TokenStream2) -> TokenStream2 {
 	match s {
-		"bool" => quote! { w.write_bool(#arg) },
-		"u8" => quote! { w.write_byte(#arg) },
-		"i8" => quote! { w.write_i8(#arg) },
-		"u16" => quote! { w.write_u16(#arg) },
-		"i16" => quote! { w.write_i16(#arg) },
-		"u32" => quote! { w.write_u32(#arg) },
-		"i32" => quote! { w.write_i32(#arg) },
-		"u64" => quote! { w.write_u64(#arg) },
-		"i64" => quote! { w.write_i64(#arg) },
-		"f32" => quote! { w.write_f32(#arg) },
-		"f64" => quote! { w.write_f64(#arg) },
-		"String" => quote! { w.write_string(#arg) },
-		"Text" => quote! { w.write_text(#arg) },
-		"RGB" => quote! { w.write_rgb(#arg) },
-		"Vector2" => quote! { w.write_vector2(#arg) },
+		"bool" => quote! { w.write_bool(#arg)? },
+		"u8" => quote! { w.write_byte(#arg)? },
+		"i8" => quote! { w.write_i8(#arg)? },
+		"u16" => quote! { w.write_u16(#arg)? },
+		"i16" => quote! { w.write_i16(#arg)? },
+		"u32" => quote! { w.write_u32(#arg)? },
+		"i32" => quote! { w.write_i32(#arg)? },
+		"u64" => quote! { w.write_u64(#arg)? },
+		"i64" => quote! { w.write_i64(#arg)? },
+		"f32" => quote! { w.write_f32(#arg)? },
+		"f64" => quote! { w.write_f64(#arg)? },
+		"String" => quote! { w.write_string(#arg)? },
+		"Text" => quote! { w.write_text(#arg)? },
+		"RGB" => quote! { w.write_rgb(#arg)? },
+		"Vector2" => quote! { w.write_vector2(#arg)? },
 		e => { dbg!(e); quote! { compile_error!("Unsupported type") } },
 	}
 }

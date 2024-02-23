@@ -1,3 +1,5 @@
+use std::io::{self, Write};
+
 use crate::world::binary::FileReader;
 use crate::world::types::{Format, WorldDecodeError, WALL_COUNT};
 
@@ -142,39 +144,36 @@ impl Tile {
 		Ok((tile, repeat))
 	}
 
-	pub fn encode(&self, repeat: usize, format: &Format) -> Vec<u8> {
+	pub fn encode(&self, w: &mut impl Write, repeat: usize, format: &Format) -> io::Result<()> {
 		let mut h_1 = 0;
 		let mut h_2 = 0;
 		let mut h_3 = 0;
 		let mut h_4 = 0;
-		let mut buf = vec![0; 4];
+
+		if repeat > 0 {
+			if repeat > u8::MAX as usize {
+				h_1 |= 128;
+			} else {
+				h_1 |= 64;
+			}
+		}
 
 		if self.active {
 			h_1 |= 2;
-			buf.push(self.id as u8);
 			if self.id > u8::MAX as i16 {
-				buf.push((self.id >> 8) as u8);
 				h_1 |= 32;
-			}
-
-			if format.importance[self.id as usize] {
-				buf.extend(self.frame_x.to_le_bytes());
-				buf.extend(self.frame_y.to_le_bytes());
 			}
 
 			if self.color > 0 {
 				h_3 |= 8;
-				buf.push(self.color)
 			}
 		}
 
 		if self.wall > 0 {
 			h_1 |= 4;
-			buf.push(self.wall as u8);
 
 			if self.wall_color > 0 {
 				h_3 |= 16;
-				buf.push(self.wall_color as u8)
 			}
 		}
 
@@ -187,7 +186,6 @@ impl Tile {
 			};
 			h_1 |= f_1;
 			h_3 |= f_3;
-			buf.push(self.liquid)
 		}
 
 		if self.wire_1 {
@@ -216,7 +214,6 @@ impl Tile {
 
 		if self.wall > u8::MAX as u16 {
 			h_3 |= 64;
-			buf.push((self.wall >> 8) as u8)
 		}
 
 		if self.invisible_block {
@@ -232,34 +229,66 @@ impl Tile {
 			h_4 |= 16;
 		}
 
-		let mut i = 3;
 		if h_4 > 0 {
 			h_3 |= 1;
-			buf[i] = h_4;
-			i -= 1;
 		}
 		if h_3 > 0 {
 			h_2 |= 1;
-			buf[i] = h_3;
-			i -= 1;
 		}
 		if h_2 > 0 {
 			h_1 |= 1;
-			buf[i] = h_2;
-			i -= 1;
+		}
+		w.write_all(&[h_1])?;
+		if h_2 > 0 {
+			w.write_all(&[h_2])?;
+		}
+		if h_3 > 0 {
+			w.write_all(&[h_3])?;
+		}
+		if h_4 > 0 {
+			w.write_all(&[h_4])?;
+		}
+
+		if self.active {
+			w.write_all(&[self.id as u8])?;
+			if self.id > u8::MAX as i16 {
+				w.write_all(&[(self.id >> 8) as u8])?;
+			}
+
+			if format.importance[self.id as usize] {
+				w.write_all(&self.frame_x.to_le_bytes())?;
+				w.write_all(&self.frame_y.to_le_bytes())?;
+			}
+
+			if self.color > 0 {
+				w.write_all(&[self.color])?;
+			}
+		}
+
+		if self.wall > 0 {
+			w.write_all(&[self.wall as u8])?;
+
+			if self.wall_color > 0 {
+				w.write_all(&[self.wall_color as u8])?;
+			}
+		}
+
+		if self.liquid > 0 {
+			w.write_all(&[self.liquid])?;
+		}
+
+		if self.wall > u8::MAX as u16 {
+			w.write_all(&[(self.wall >> 8) as u8])?;
 		}
 
 		if repeat > 0 {
 			if repeat > u8::MAX as usize {
-				h_1 |= 128;
-				buf.extend((repeat as u16).to_le_bytes());
+				w.write_all(&(repeat as u16).to_le_bytes())?;
 			} else {
-				h_1 |= 64;
-				buf.push(repeat as u8)
+				w.write_all(&[repeat as u8])?;
 			}
 		}
 
-		buf[i] = h_1;
-		buf[i..].to_vec()
+		Ok(())
 	}
 }

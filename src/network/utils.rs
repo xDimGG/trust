@@ -1,5 +1,5 @@
 use std::cmp::{max, min};
-use std::io::Write;
+use std::io::{self, BufWriter};
 
 use crate::binary::writer::Writer;
 use crate::world::types::{Header, World};
@@ -35,7 +35,7 @@ pub fn get_sections_near(x: i32, y: i32, max_sec_x: usize, max_sec_y: usize) -> 
 	(sec_x_start, sec_x_end, sec_y_start, sec_y_end)
 }
 
-pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> Message {
+pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> io::Result<Message> {
 	let x_start = sec_x * SECTION_WIDTH;
 	let y_start = sec_y * SECTION_HEIGHT;
 	let x_end = x_start + SECTION_WIDTH;
@@ -43,11 +43,13 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> Message {
 
 	// todo: optimize this to reduce data copying
 
-	let mut w = Writer::new();
-	w.write_i32(x_start as i32);
-	w.write_i32(y_start as i32);
-	w.write_i16((x_end - x_start) as i16);
-	w.write_i16((y_end - y_start) as i16);
+	let out = ZlibEncoder::new_with_compress(vec![], Compress::new(Compression::default(), false));
+	let bw = BufWriter::new(out);
+	let mut w = Writer::new(bw);
+	w.write_i32(x_start as i32)?;
+	w.write_i32(y_start as i32)?;
+	w.write_i16((x_end - x_start) as i16)?;
+	w.write_i16((y_end - y_start) as i16)?;
 
 	let mut last_tile = &Tile::default();
 	let mut repeat_count = 0;
@@ -68,7 +70,7 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> Message {
 					continue;
 				}
 
-				w.write_bytes(last_tile.encode(repeat_count, &world.format));
+				last_tile.encode(&mut w, repeat_count, &world.format).unwrap();
 				repeat_count = 0;
 			}
 
@@ -108,42 +110,40 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> Message {
 		}
 	}
 
-	w.write_bytes(last_tile.encode(repeat_count, &world.format));
+	last_tile.encode(&mut w, repeat_count, &world.format)?;
 
-	w.write_i16(chest_tiles.len() as i16);
+	w.write_i16(chest_tiles.len() as i16)?;
 	for (x, y) in chest_tiles {
 		let (i, chest) = world.chests.iter().enumerate().find(|(_, c)| c.x as usize == x && c.y as usize == y).unwrap();
-		w.write_i16(i as i16);
-		w.write_i16(x as i16);
-		w.write_i16(y as i16);
-		w.write_string(chest.name.clone());
+		w.write_i16(i as i16)?;
+		w.write_i16(x as i16)?;
+		w.write_i16(y as i16)?;
+		w.write_string(&chest.name)?;
 	}
 
-	w.write_i16(sign_tiles.len() as i16);
+	w.write_i16(sign_tiles.len() as i16)?;
 	for (x, y) in sign_tiles {
 		let (i, sign) = world.signs.iter().enumerate().find(|(_, s)| s.x as usize == x && s.y as usize == y).unwrap();
-		w.write_i16(i as i16);
-		w.write_i16(x as i16);
-		w.write_i16(y as i16);
-		w.write_string(sign.text.clone());
+		w.write_i16(i as i16)?;
+		w.write_i16(x as i16)?;
+		w.write_i16(y as i16)?;
+		w.write_string(&sign.text)?;
 	}
 
-	w.write_i16(entity_tiles.len() as i16);
+	w.write_i16(entity_tiles.len() as i16)?;
 	for (x, y) in entity_tiles {
 		let entity = world.entities.iter().find(|c| c.x == x as i16 && c.y == y as i16).unwrap();
-		entity.write(&mut w)
+		entity.write(&mut w)?
 	}
 
-	let mut out = ZlibEncoder::new_with_compress(vec![], Compress::new(Compression::default(), false));
-	out.write_all(&w.finalize()).unwrap();
-
-	Message::Custom(10, out.finish().unwrap())
+	Ok(Message::Custom(10, w.into_inner().into_inner()?.finish()?))
 }
 
 pub fn encode_world_header(h: &Header) -> Message {
 	Message::WorldHeader(WorldHeader {
 		time: 0,
-		time_flags: flags( h.temp_day_time, h.temp_blood_moon, h.temp_eclipse, false, false, false, false, false),
+		time_flags: flags(h.temp_day_time, h.temp_blood_moon, h.temp_eclipse, false, false, false, false, false),
+		// time_flags: flags(true, h.temp_blood_moon, h.temp_eclipse, false, false, false, false, false),
 		moon_phase: h.temp_moon_phase as u8,
 		width: h.width as i16,
 		height: h.height as i16,

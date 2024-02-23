@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, io, str::{self, Utf8Error}};
+use std::{error::Error, fmt, io, str::{self, Utf8Error}, time::SystemTime};
 
 use crate::binary::types::Vector2;
 use crate::world::tile::Tile;
@@ -82,6 +82,11 @@ impl fmt::Display for WorldDecodeError {
 }
 
 impl Error for WorldDecodeError {}
+impl From<io::Error> for WorldDecodeError {
+	fn from(err: io::Error) -> Self {
+		Self::FSError(err)
+	}
+}
 
 #[derive(Debug, Clone)]
 pub struct World {
@@ -131,7 +136,7 @@ pub struct Header {
 	pub world_remix: bool,
 	pub world_no_traps: bool,
 	pub world_zenith: bool,
-	pub creation_time: i64,
+	pub creation_time: SystemTime,
 	pub has_crimson: bool,
 	pub hard_mode: bool,
 	pub moon_type: i32,

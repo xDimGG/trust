@@ -1,20 +1,21 @@
+use std::time::{Duration, UNIX_EPOCH};
 use std::{collections::HashSet, fs, path::Path};
 use crate::world::binary::FileReader;
 use crate::world::types::*;
 use crate::world::tile::*;
 use crate::world::entity::*;
 
+pub const EPOCH_DIFFERENCE: u64 = 719162 * 24 * 60 * 60 * 1000;
+
 impl World {
 	pub fn from_file(path: &Path) -> Result<World, WorldDecodeError> {
-		let contents = fs::read(path).map_err(WorldDecodeError::FSError)?;
+		let contents = fs::read(path)?;
 		let mut reader = FileReader::new(contents);
 		let mut world = Self::from_reader(&mut reader)?;
 
 		if world.metadata.version < 141 {
-			let file_metadata = fs::metadata(path).map_err(WorldDecodeError::FSError)?;
-			if let Some(ft) = filetime::FileTime::from_creation_time(&file_metadata) {
-				world.header.creation_time = ft.unix_seconds()
-			}
+			let file_metadata = fs::metadata(path)?;
+			world.header.creation_time = file_metadata.created()?
 		}
 
 		Ok(world)
@@ -220,8 +221,11 @@ impl World {
 		let world_no_traps = version >= 266 && r.read_bool()?;
 		let world_zenith = if version >= 267 { r.read_bool()? } else { world_drunk && world_remix };
 
-		// TODO: parse ticks as time (https://learn.microsoft.com/en-us/dotnet/api/system.datetime.frombinary?view=net-8.0)
-		let creation_time = if version >= 141 { r.read_i64()? } else { 0 };
+		// https://learn.microsoft.com/en-us/dotnet/api/system.datetime.now?view=net-8.0#remarks
+		let creation_time = if version >= 141 {
+			let b = r.read_u64()? << 2 >> 2;
+			UNIX_EPOCH + Duration::from_millis(b / 10_000 - EPOCH_DIFFERENCE)
+		} else { UNIX_EPOCH };
 
 		let moon_type = r.read_byte()? as i32;
 		let tree_x = [r.read_i32()?, r.read_i32()?, r.read_i32()?];
@@ -231,8 +235,8 @@ impl World {
 		let ice_back_style = r.read_i32()?;
 		let jungle_back_style = r.read_i32()?;
 		let hell_back_style = r.read_i32()?;
-		let spawn_tile_x = r.read_i32()?;
-		let spawn_tile_y = r.read_i32()?;
+		let spawn_x = r.read_i32()?;
+		let spawn_y = r.read_i32()?;
 		let world_surface = r.read_f64()?;
 		let rock_layer = r.read_f64()?;
 		let temp_time = r.read_f64()?;
@@ -451,8 +455,8 @@ impl World {
 			ice_back_style,
 			jungle_back_style,
 			hell_back_style,
-			spawn_x: spawn_tile_x,
-			spawn_y: spawn_tile_y,
+			spawn_x,
+			spawn_y,
 			world_surface,
 			rock_layer,
 			temp_time,

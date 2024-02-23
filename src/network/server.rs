@@ -2,7 +2,7 @@ use std::cmp::{max, min};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{Result, AsyncReadExt};
+use tokio::io::{self, AsyncReadExt};
 use tokio::sync::{Mutex, RwLock, broadcast};
 use tokio::select;
 use std::sync::Arc;
@@ -12,6 +12,8 @@ use crate::network::messages::{self, Sanitize, Message, DropItem, ConnectionAppr
 use crate::binary::types::{Text, TextMode, Vector2};
 use crate::world::types::World;
 use crate::network::utils::{get_sections_near, encode_tiles, encode_world_header, get_section_x, get_section_y};
+
+use super::messages::MessageDecodeError;
 
 const GAME_VERSION: &str = "Terraria279";
 const MAX_CLIENTS: usize = 256;
@@ -62,7 +64,7 @@ impl Client {
 		}
 	}
 
-	pub fn encode_sections(&mut self, world: &World, sec_x_start: usize, sec_x_end: usize, sec_y_start: usize, sec_y_end: usize) -> Vec<Message> {
+	pub fn encode_sections(&mut self, world: &World, sec_x_start: usize, sec_x_end: usize, sec_y_start: usize, sec_y_end: usize) -> Result<Vec<Message>, MessageDecodeError> {
 		let mut msgs = vec![];
 		for x in sec_x_start..sec_x_end {
 			for y in sec_y_start..sec_y_end {
@@ -71,11 +73,11 @@ impl Client {
 				}
 
 				self.loaded_sections[x][y] = true;
-				msgs.push(encode_tiles(world, x, y))
+				msgs.push(encode_tiles(world, x, y)?)
 			}
 		}
 
-		msgs
+		Ok(msgs)
 	}
 }
 
@@ -100,7 +102,7 @@ impl Server {
 		}
 	}
 
-	pub async fn listen(self, address: &str) -> Result<()> {
+	pub async fn listen(self, address: &str) -> io::Result<()> {
 		let listener = TcpListener::bind(address).await?;
 		let arc = Arc::new(self);
 
@@ -122,7 +124,7 @@ impl Server {
 		let src = {
 			let mut clients = self.clients.lock().await;
 			let Some(id) = clients.iter().position(Option::is_none) else {
-				Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "CLI.ServerIsFull".to_owned())).write(Pin::new(&mut wh)).await?;
+				Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "CLI.ServerIsFull".to_owned())).write_stream(Pin::new(&mut wh)).await?;
 				return Ok(())
 			};
 			let world = self.world.read().await;
@@ -152,14 +154,14 @@ impl Server {
 					} else {
 						let response = self.handle_message(Message::from(buffer), src, &mut tx).await?;
 						for msg in response {
-							msg.write(Pin::new(&mut wh)).await?;
+							msg.write_stream(Pin::new(&mut wh)).await?;
 						}
 					}
 				}
 				content = rx.recv() => {
 					let (content, ignore_id) = content?;
 					if ignore_id.map_or(true, |id| id != src) {
-						content.write(Pin::new(&mut wh)).await?;
+						content.write_stream(Pin::new(&mut wh)).await?;
 					}
 				}
 			}
@@ -168,25 +170,26 @@ impl Server {
 
 	async fn handle_message(&self, msg: Message, src: usize, tx: &mut broadcast::Sender<(Message, Option<usize>)>) -> anyhow::Result<Vec<Message>> {
 		let mut clients = self.clients.lock().await;
+		let client = clients[src].as_mut().unwrap();
 
 		Ok(match msg {
 			// The client sends their version and if it matches the server version, we send ConnectionApprove if there is not password and PasswordRequest if there is a password
 			// If their version does not match, refuse connection
 			Message::VersionIdentifier(version) => {
-				if clients[src].as_ref().unwrap().state != ConnectionState::New {
+				if client.state != ConnectionState::New {
 					return Ok(vec![])
 				}
 
 				if version == GAME_VERSION {
 					let password = self.password.read().await;
 					if password.is_empty() {
-						clients[src].as_mut().unwrap().state = ConnectionState::Authenticated;
+						client.state = ConnectionState::Authenticated;
 						vec![Message::ConnectionApprove(ConnectionApprove {
 							client_id: src as u8,
 							flag: false,
 						})]
 					} else {
-						clients[src].as_mut().unwrap().state = ConnectionState::PendingAuthentication;
+						client.state = ConnectionState::PendingAuthentication;
 						vec![Message::PasswordRequest]
 					}
 				} else {
@@ -200,7 +203,7 @@ impl Server {
 			Message::PasswordResponse(pass) => {
 				let password = self.password.read().await;
 				if pass == password.as_str() {
-					clients[src].as_mut().unwrap().state = ConnectionState::Authenticated;
+					client.state = ConnectionState::Authenticated;
 					vec![Message::ConnectionApprove(ConnectionApprove {
 						client_id: src as u8,
 						flag: false,
@@ -211,14 +214,14 @@ impl Server {
 			}
 			// The player sends their character's UUID. Terraria seems to do nothing with it so let's just store it
 			Message::UUID(uuid) => {
-				clients[src].as_mut().unwrap().uuid = Some(uuid);
+				client.uuid = Some(uuid);
 				vec![]
 			}
 			// If another player already exists with the same name, refuse this player
 			// The player sends character details upon first join. Store it
 			// Broadcast this player to all other players
 			Message::PlayerDetails(mut pd) => {
-				if clients[src].as_ref().unwrap().state != ConnectionState::Authenticated {
+				if client.state != ConnectionState::Authenticated {
 					return Ok(vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))])
 				}
 
@@ -252,25 +255,25 @@ impl Server {
 			Message::PlayerHealth(mut ph) => {
 				ph.sanitize(src as u8);
 				tx.send((Message::PlayerHealth(ph.clone()), Some(src)))?;
-				clients[src].as_mut().unwrap().health = Some(ph);
+				client.health = Some(ph);
 				vec![]
 			}
 			// Doesn't get broadcast
 			Message::PlayerMana(mut pm) => {
 				pm.sanitize(src as u8);
-				clients[src].as_mut().unwrap().mana = Some(pm);
+				client.mana = Some(pm);
 				vec![]
 			}
 			Message::PlayerBuffs(mut pb) => {
 				pb.sanitize(src as u8);
 				tx.send((Message::PlayerBuffs(pb.clone()), Some(src)))?;
-				clients[src].as_mut().unwrap().buffs = Some(pb);
+				client.buffs = Some(pb);
 				vec![]
 			}
 			Message::PlayerLoadout(mut psl) => {
 				psl.sanitize(src as u8);
 				tx.send((Message::PlayerLoadout(psl.clone()), Some(src)))?;
-				clients[src].as_mut().unwrap().loadout = Some(psl);
+				client.loadout = Some(psl);
 				vec![]
 			}
 			Message::PlayerInventorySlot(mut pis) => {
@@ -278,7 +281,7 @@ impl Server {
 				let idx = pis.slot_id as usize;
 				if idx < MAX_INVENTORY_SLOTS {
 					tx.send((Message::PlayerInventorySlot(pis.clone()), Some(src)))?;
-					clients[src].as_mut().unwrap().inventory.as_ref().lock().await[idx] = Some(pis);
+					client.inventory.as_ref().lock().await[idx] = Some(pis);
 				}
 				vec![]
 			}
@@ -287,12 +290,12 @@ impl Server {
 				// todo: Main.SyncAnInvasion
 			}
 			Message::SpawnRequest(sr) => {
-				if clients[src].as_ref().unwrap().state != ConnectionState::DetailsReceived {
+				if client.state != ConnectionState::DetailsReceived {
 					return Ok(vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))])
 				}
 
 				let w = self.world.read().await;
-				let c = clients[src].as_mut().unwrap();
+				let c = client;
 				let mut res = vec![encode_world_header(&w.header)];
 				let mut count = 0;
 
@@ -303,13 +306,13 @@ impl Server {
 				let x_max = get_section_x(w.header.width as usize);
 				let y_max = get_section_y(w.header.height as usize);
 				let (xs, xe, ys, ye) = get_sections_near(w.header.spawn_x, w.header.spawn_y, x_max, y_max);
-				let mut secs = c.encode_sections(&w, xs, xe, ys, ye);
+				let mut secs = c.encode_sections(&w, xs, xe, ys, ye)?;
 				count += secs.len();
 				res.append(&mut secs);
 
 				if sr.x >= 10 && sr.x <= (w.header.width - 10) && sr.y >= 10 && sr.y <= (w.header.height - 10) {
 					let (xs, xe, ys, ye) = get_sections_near(sr.x, sr.y, x_max - 1, y_max - 1);
-					let mut secs = c.encode_sections(&w, xs, xe, ys, ye);
+					let mut secs = c.encode_sections(&w, xs, xe, ys, ye)?;
 					count += secs.len();
 					res.append(&mut secs);
 				}
@@ -404,7 +407,6 @@ impl Server {
 			}
 			Message::PlayerSpawnRequest(mut psr) => {
 				psr.sanitize(src as u8);
-				let client = clients[src].as_mut().unwrap();
 
 				if client.state != ConnectionState::DetailsReceived && client.state != ConnectionState::Complete {
 					return Ok(vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))])
@@ -458,7 +460,7 @@ impl Server {
 				pa.sanitize(src as u8);
 
 				let w = self.world.read().await;
-				let c = clients[src].as_mut().unwrap();
+				let c = client;
 
 				let max_sec_x = get_section_x(w.header.width as usize);
 				let max_sec_y = get_section_y(w.header.height as usize);
@@ -469,7 +471,7 @@ impl Server {
 				let sec_y_end = min(sec_y_start + 1, max_sec_y);
 
 				tx.send((Message::PlayerAction(pa), Some(src)))?;
-				c.encode_sections(&w, sec_x_start, sec_x_end, sec_y_start, sec_y_end)
+				c.encode_sections(&w, sec_x_start, sec_x_end, sec_y_start, sec_y_end)?
 			}
 			// Just gets broadcasted
 			Message::PlayInstrument(mut pi) => {
