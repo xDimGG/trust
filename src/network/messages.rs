@@ -1,15 +1,15 @@
-use macros::message_encoder_decoder;
-use crate::binary::types::{Text, Vector2, RGB};
 use crate::binary::reader::Reader;
+use crate::binary::types::{Text, Vector2, RGB};
 use crate::binary::writer::MessageWriter;
+use macros::message_encoder_decoder;
 use std::io::Cursor;
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use std::error::Error;
-use std::pin::Pin;
 use std::io;
-use std::io::{Write, Seek};
+use std::io::{Seek, Write};
+use std::pin::Pin;
 
 pub trait Sanitize {
 	fn sanitize(&mut self, src: u8);
@@ -151,29 +151,29 @@ pub enum Message {
 		pants_color: RGB,
 		shoe_color: RGB,
 		/**
-			if (player.difficulty == 1) flags_1[0] = true;
-			else if (player1.difficulty == 2) flags_1[1] = true;
-			else if (player1.difficulty == 3) flags_1[3] = true;
-			flags_1[2] = player1.extraAccessory;
-		 */
+		   if (player.difficulty == 1) flags_1[0] = true;
+		   else if (player1.difficulty == 2) flags_1[1] = true;
+		   else if (player1.difficulty == 3) flags_1[3] = true;
+		   flags_1[2] = player1.extraAccessory;
+		*/
 		flags_1: u8,
 		/**
-			flags_2[0] = player1.UsingBiomeTorches;
-			flags_2[1] = player1.happyFunTorchTime;
-			flags_2[2] = player1.unlockedBiomeTorches;
-			flags_2[3] = player1.unlockedSuperCart;
-			flags_2[4] = player1.enabledSuperCart;
-		 */
+		   flags_2[0] = player1.UsingBiomeTorches;
+		   flags_2[1] = player1.happyFunTorchTime;
+		   flags_2[2] = player1.unlockedBiomeTorches;
+		   flags_2[3] = player1.unlockedSuperCart;
+		   flags_2[4] = player1.enabledSuperCart;
+		*/
 		flags_2: u8,
 		/**
-			flags_3[0] = player1.usedAegisCrystal;
-			flags_3[1] = player1.usedAegisFruit;
-			flags_3[2] = player1.usedArcaneCrystal;
-			flags_3[3] = player1.usedGalaxyPearl;
-			flags_3[4] = player1.usedGummyWorm;
-			flags_3[5] = player1.usedAmbrosia;
-			flags_3[6] = player1.ateArtisanBread;
-		 */
+		   flags_3[0] = player1.usedAegisCrystal;
+		   flags_3[1] = player1.usedAegisFruit;
+		   flags_3[2] = player1.usedArcaneCrystal;
+		   flags_3[3] = player1.usedGalaxyPearl;
+		   flags_3[4] = player1.usedGummyWorm;
+		   flags_3[5] = player1.usedAmbrosia;
+		   flags_3[6] = player1.ateArtisanBread;
+		*/
 		flags_3: u8,
 	},
 	/// 5 <->
@@ -242,10 +242,7 @@ pub enum Message {
 		sandstorm_intended_severity: f32,
 	},
 	/// 8 <-
-	SpawnRequest {
-		x: i32,
-		y: i32,
-	},
+	SpawnRequest { x: i32, y: i32 },
 	/// 9 ->
 	SpawnResponse {
 		status: i32,
@@ -307,10 +304,7 @@ pub enum Message {
 		item_id: i16,
 	},
 	/// 22 <->
-	PlayerReserveItem {
-		time: i16,
-		client_id: u8,
-	},
+	PlayerReserveItem { time: i16, client_id: u8 },
 	/// 23 ->
 	NPCInfo {
 		id: i16,
@@ -336,10 +330,7 @@ pub enum Message {
 	/// 39 ->
 	DereserveItem(i16),
 	/// 40 <->
-	PlayerTalkNPC {
-		client_id: u8,
-		npc: i16,
-	},
+	PlayerTalkNPC { client_id: u8, npc: i16 },
 	/// 42 <-
 	PlayerMana {
 		client_id: u8,
@@ -354,28 +345,15 @@ pub enum Message {
 		buffs: [u16; MAX_BUFFS],
 	},
 	/// 57 ->
-	WorldTotals {
-		good: u8,
-		evil: u8,
-		blood: u8,
-	},
+	WorldTotals { good: u8, evil: u8, blood: u8 },
 	/// 58 <->
-	PlayInstrument {
-		client_id: u8,
-		pitch: f32,
-	},
+	PlayInstrument { client_id: u8, pitch: f32 },
 	/// 59 <->
-	ToggleSwitch {
-		x: i16,
-		y: i16,
-	},
+	ToggleSwitch { x: i16, y: i16 },
 	/// 68 <-
 	UUID(String),
 	/// 74 ->
-	AnglerQuest {
-		id: u8,
-		finished: bool,
-	},
+	AnglerQuest { id: u8, finished: bool },
 	/// 78 ->
 	InvasionProgress {
 		progress: i32,
@@ -384,10 +362,7 @@ pub enum Message {
 		progress_wave: i8,
 	},
 	/// 83 ->
-	KillCount {
-		id: i16,
-		amount: i32,
-	},
+	KillCount { id: i16, amount: i32 },
 	/// 101 ->
 	PillarShieldStrengths {
 		solar: u16,
@@ -396,10 +371,7 @@ pub enum Message {
 		stardust: u16,
 	},
 	/// 103 ->
-	MoonlordCountdown {
-		maximum: i32,
-		current: i32,
-	},
+	MoonlordCountdown { maximum: i32, current: i32 },
 	/// 125 <->
 	PlayerPickTile {
 		client_id: u8,
@@ -424,10 +396,16 @@ pub enum Message {
 }
 
 impl Message {
-	pub async fn write_stream(self, mut stream: Pin<&mut impl AsyncWrite>) -> Result<usize, MessageDecodeError> {
+	pub async fn write_stream(
+		self,
+		mut stream: Pin<&mut impl AsyncWrite>,
+	) -> Result<usize, MessageDecodeError> {
 		let mut c = Cursor::new(vec![]);
 		self.write(&mut c)?;
-		stream.write(&c.into_inner()).await.map_err(MessageDecodeError::IO)
+		stream
+			.write(&c.into_inner())
+			.await
+			.map_err(MessageDecodeError::IO)
 	}
 }
 

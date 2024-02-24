@@ -1,3 +1,6 @@
 /target
 TerrariaServer_Decompiled/
 proxy/*.txt
+
+scripts/build
+**/__pycache__

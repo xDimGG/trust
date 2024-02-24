@@ -2,16 +2,23 @@ use std::cmp::{max, min};
 use std::io::{self, BufWriter};
 
 use crate::binary::writer::Writer;
-use crate::world::types::{Header, World};
-use crate::world::tile::Tile;
 use crate::network::messages::{Message, WorldHeader};
+use crate::world::tile::Tile;
+use crate::world::types::{Header, World};
 use flate2::write::ZlibEncoder;
 use flate2::{Compress, Compression};
 
 #[allow(clippy::too_many_arguments)]
 // utility function for generating u8 bitmask from bools where first param is LSB
 pub fn flags(a: bool, b: bool, c: bool, d: bool, e: bool, f: bool, g: bool, h: bool) -> u8 {
-	a as u8 | (b as u8) << 1 | (c as u8) << 2 | (d as u8) << 3 | (e as u8) << 4 | (f as u8) << 5 | (g as u8) << 6 | (h as u8) << 7
+	a as u8
+		| (b as u8) << 1
+		| (c as u8) << 2
+		| (d as u8) << 3
+		| (e as u8) << 4
+		| (f as u8) << 5
+		| (g as u8) << 6
+		| (h as u8) << 7
 }
 
 const SECTION_WIDTH: usize = 200;
@@ -25,11 +32,16 @@ pub fn get_section_y(y: usize) -> usize {
 	y / SECTION_HEIGHT
 }
 
-pub fn get_sections_near(x: i32, y: i32, max_sec_x: usize, max_sec_y: usize) -> (usize, usize, usize, usize) {
+pub fn get_sections_near(
+	x: i32,
+	y: i32,
+	max_sec_x: usize,
+	max_sec_y: usize,
+) -> (usize, usize, usize, usize) {
 	// -2, -1, +5, +3 are the values that the game uses. dont ask me
-	let sec_x_start  = max(get_section_x(x as usize) - 2, 0);
+	let sec_x_start = max(get_section_x(x as usize) - 2, 0);
 	let sec_x_end = min(sec_x_start + 5, max_sec_x);
-	let sec_y_start  = max(get_section_y(y as usize) - 1, 0);
+	let sec_y_start = max(get_section_y(y as usize) - 1, 0);
 	let sec_y_end = min(sec_y_start + 3, max_sec_y);
 
 	(sec_x_start, sec_x_end, sec_y_start, sec_y_end)
@@ -70,7 +82,9 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> io::Result<Mes
 					continue;
 				}
 
-				last_tile.encode(&mut w, repeat_count, &world.format).unwrap();
+				last_tile
+					.encode(&mut w, repeat_count, &world.format)
+					.unwrap();
 				repeat_count = 0;
 			}
 
@@ -114,7 +128,12 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> io::Result<Mes
 
 	w.write_i16(chest_tiles.len() as i16)?;
 	for (x, y) in chest_tiles {
-		let (i, chest) = world.chests.iter().enumerate().find(|(_, c)| c.x as usize == x && c.y as usize == y).unwrap();
+		let (i, chest) = world
+			.chests
+			.iter()
+			.enumerate()
+			.find(|(_, c)| c.x as usize == x && c.y as usize == y)
+			.unwrap();
 		w.write_i16(i as i16)?;
 		w.write_i16(x as i16)?;
 		w.write_i16(y as i16)?;
@@ -123,7 +142,12 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> io::Result<Mes
 
 	w.write_i16(sign_tiles.len() as i16)?;
 	for (x, y) in sign_tiles {
-		let (i, sign) = world.signs.iter().enumerate().find(|(_, s)| s.x as usize == x && s.y as usize == y).unwrap();
+		let (i, sign) = world
+			.signs
+			.iter()
+			.enumerate()
+			.find(|(_, s)| s.x as usize == x && s.y as usize == y)
+			.unwrap();
 		w.write_i16(i as i16)?;
 		w.write_i16(x as i16)?;
 		w.write_i16(y as i16)?;
@@ -132,7 +156,11 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> io::Result<Mes
 
 	w.write_i16(entity_tiles.len() as i16)?;
 	for (x, y) in entity_tiles {
-		let entity = world.entities.iter().find(|c| c.x == x as i16 && c.y == y as i16).unwrap();
+		let entity = world
+			.entities
+			.iter()
+			.find(|c| c.x == x as i16 && c.y == y as i16)
+			.unwrap();
 		entity.write(&mut w)?
 	}
 
@@ -142,7 +170,16 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> io::Result<Mes
 pub fn encode_world_header(h: &Header) -> Message {
 	Message::WorldHeader(WorldHeader {
 		time: 0,
-		time_flags: flags(h.temp_day_time, h.temp_blood_moon, h.temp_eclipse, false, false, false, false, false),
+		time_flags: flags(
+			h.temp_day_time,
+			h.temp_blood_moon,
+			h.temp_eclipse,
+			false,
+			false,
+			false,
+			false,
+			false,
+		),
 		// time_flags: flags(true, h.temp_blood_moon, h.temp_eclipse, false, false, false, false, false),
 		moon_phase: h.temp_moon_phase as u8,
 		width: h.width as i16,
@@ -176,28 +213,136 @@ pub fn encode_world_header(h: &Header) -> Message {
 		wind_speed_target: h.wind_speed_target,
 		num_clouds: h.num_clouds as u8,
 		tree_x: h.tree_x,
-		tree_style: h.tree_style.iter().map(|n| *n as u8).collect::<Vec<u8>>().try_into().unwrap_or([0; 4]),
+		tree_style: h
+			.tree_style
+			.iter()
+			.map(|n| *n as u8)
+			.collect::<Vec<u8>>()
+			.try_into()
+			.unwrap_or([0; 4]),
 		cave_back_x: h.cave_back_x,
-		cave_back_style: h.cave_back_style.iter().map(|n| *n as u8).collect::<Vec<u8>>().try_into().unwrap_or([0; 4]),
-		tree_top_variations: h.tree_top_variations.iter().map(|n| *n as u8).collect::<Vec<u8>>().try_into().unwrap_or([0; 13]),
+		cave_back_style: h
+			.cave_back_style
+			.iter()
+			.map(|n| *n as u8)
+			.collect::<Vec<u8>>()
+			.try_into()
+			.unwrap_or([0; 4]),
+		tree_top_variations: h
+			.tree_top_variations
+			.iter()
+			.map(|n| *n as u8)
+			.collect::<Vec<u8>>()
+			.try_into()
+			.unwrap_or([0; 13]),
 		max_raining: h.temp_max_rain,
 		flags: [
 			// todo: support for server-side characters
-			flags(h.smashed_shadow_orb, h.downed_boss_1, h.downed_boss_2, h.downed_boss_3, h.hard_mode, h.downed_clown, false, h.downed_plant_boss),
+			flags(
+				h.smashed_shadow_orb,
+				h.downed_boss_1,
+				h.downed_boss_2,
+				h.downed_boss_3,
+				h.hard_mode,
+				h.downed_clown,
+				false,
+				h.downed_plant_boss,
+			),
 			// todo: pumpkinMoon and snowMoon
-			flags(h.downed_mech_boss_1, h.downed_mech_boss_2, h.downed_mech_boss_3, h.downed_mech_boss_any, h.cloud_bg_active == 1., h.has_crimson, false, false),
+			flags(
+				h.downed_mech_boss_1,
+				h.downed_mech_boss_2,
+				h.downed_mech_boss_3,
+				h.downed_mech_boss_any,
+				h.cloud_bg_active == 1.,
+				h.has_crimson,
+				false,
+				false,
+			),
 			// todo: int num7 = bitsByte7[2] ? 1 : 0;
-			flags(false, h.fast_forward_time_to_dawn, false, h.downed_slime_king, h.downed_queen_bee, h.downed_fishron, h.downed_martians, h.downed_ancient_cultist),
+			flags(
+				false,
+				h.fast_forward_time_to_dawn,
+				false,
+				h.downed_slime_king,
+				h.downed_queen_bee,
+				h.downed_fishron,
+				h.downed_martians,
+				h.downed_ancient_cultist,
+			),
 			// todo: BirthdayParty
-			flags(h.downed_moonlord, h.downed_halloween_king, h.downed_halloween_tree, h.downed_christmas_ice_queen, h.downed_christmas_santank, h.downed_christmas_tree, h.downed_golem_boss, false),
+			flags(
+				h.downed_moonlord,
+				h.downed_halloween_king,
+				h.downed_halloween_tree,
+				h.downed_christmas_ice_queen,
+				h.downed_christmas_santank,
+				h.downed_christmas_tree,
+				h.downed_golem_boss,
+				false,
+			),
 			// todo: DD2Event.Ongoing
-			flags(h.downed_pirates, h.downed_frost, h.downed_goblins, h.temp_sandstorm_happening, false, h.downed_dd2_invasion_t1, h.downed_dd2_invasion_t2, h.downed_dd2_invasion_t3),
-			flags(h.combat_book_was_used, h.temp_lantern_night_manual, h.downed_tower_solar, h.downed_tower_vortex, h.downed_tower_nebula, h.downed_tower_stardust, h.force_halloween_for_today, h.force_xmas_for_today),
+			flags(
+				h.downed_pirates,
+				h.downed_frost,
+				h.downed_goblins,
+				h.temp_sandstorm_happening,
+				false,
+				h.downed_dd2_invasion_t1,
+				h.downed_dd2_invasion_t2,
+				h.downed_dd2_invasion_t3,
+			),
+			flags(
+				h.combat_book_was_used,
+				h.temp_lantern_night_manual,
+				h.downed_tower_solar,
+				h.downed_tower_vortex,
+				h.downed_tower_nebula,
+				h.downed_tower_stardust,
+				h.force_halloween_for_today,
+				h.force_xmas_for_today,
+			),
 			// todo: freeCake, getGodWorld
-			flags(h.bought_cat, h.bought_dog, h.bought_bunny, false, h.world_drunk, h.downed_empress_of_light, h.downed_queen_slime, false),
-			flags(h.world_anniversary, h.world_dont_starve, h.downed_deerclops, h.world_not_the_bees, h.world_remix, h.unlocked_slime_blue_spawn, h.combat_book_volume_two_was_used, h.peddlers_satchel_was_used),
-			flags(h.unlocked_slime_green_spawn, h.unlocked_slime_old_spawn, h.unlocked_slime_purple_spawn, h.unlocked_slime_rainbow_spawn, h.unlocked_slime_red_spawn, h.unlocked_slime_yellow_spawn, h.unlocked_slime_copper_spawn, h.fast_forward_time_to_dusk),
-			flags(h.world_no_traps, h.world_zenith, h.unlocked_truffle_spawn, false, false, false, false, false),
+			flags(
+				h.bought_cat,
+				h.bought_dog,
+				h.bought_bunny,
+				false,
+				h.world_drunk,
+				h.downed_empress_of_light,
+				h.downed_queen_slime,
+				false,
+			),
+			flags(
+				h.world_anniversary,
+				h.world_dont_starve,
+				h.downed_deerclops,
+				h.world_not_the_bees,
+				h.world_remix,
+				h.unlocked_slime_blue_spawn,
+				h.combat_book_volume_two_was_used,
+				h.peddlers_satchel_was_used,
+			),
+			flags(
+				h.unlocked_slime_green_spawn,
+				h.unlocked_slime_old_spawn,
+				h.unlocked_slime_purple_spawn,
+				h.unlocked_slime_rainbow_spawn,
+				h.unlocked_slime_red_spawn,
+				h.unlocked_slime_yellow_spawn,
+				h.unlocked_slime_copper_spawn,
+				h.fast_forward_time_to_dusk,
+			),
+			flags(
+				h.world_no_traps,
+				h.world_zenith,
+				h.unlocked_truffle_spawn,
+				false,
+				false,
+				false,
+				false,
+				false,
+			),
 		],
 		sundial_cooldown: h.sundial_cooldown as u8,
 		moondial_cooldown: h.moondial_cooldown,

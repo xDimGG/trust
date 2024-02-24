@@ -1,8 +1,13 @@
-use std::{error::Error, fmt, io, str::{self, Utf8Error}, time::SystemTime};
+use std::{
+	error::Error,
+	fmt, io,
+	str::{self, Utf8Error},
+	time::SystemTime,
+};
 
 use crate::binary::types::Vector2;
-use crate::world::tile::Tile;
 use crate::world::entity::Entity;
+use crate::world::tile::Tile;
 
 use super::binary::FileReader;
 
@@ -69,12 +74,20 @@ impl fmt::Display for WorldDecodeError {
 			Self::UnexpectedEOI => write!(f, "Expected more data but reached end of input"),
 			Self::InvalidNumber => write!(f, "Could not parse number"),
 			Self::InvalidString(err) => write!(f, "Could not parse string, got {}", err),
-			Self::BadFileSignature => write!(f, "Invalid file signature (expecting \"{}\")", str::from_utf8(MAGIC_STRING).unwrap()),
+			Self::BadFileSignature => write!(
+				f,
+				"Invalid file signature (expecting \"{}\")",
+				str::from_utf8(MAGIC_STRING).unwrap()
+			),
 			Self::ExpectedWorldType => write!(f, "Expected file type to be world file"),
 			Self::InvalidFooter => write!(f, "Footer of file does not match header"),
 			Self::InvalidEntityKind => write!(f, "Entity kind is not recognized"),
 			Self::InvalidCreativePower => write!(f, "Creative power is not recognized"),
-			Self::PositionCheckFailed(s) => write!(f, "Position of buffer cursor does not match metadata position for field {}", s),
+			Self::PositionCheckFailed(s) => write!(
+				f,
+				"Position of buffer cursor does not match metadata position for field {}",
+				s
+			),
 			Self::UnsupportedVersion(v) => write!(f, "Unsupported file version: {}", v),
 			Self::FSError(err) => write!(f, "Got FS error: {}", err),
 		}
@@ -336,8 +349,8 @@ pub struct RoomLocation {
 #[derive(Debug, Clone)]
 pub struct Bestiary {
 	pub kills: Vec<(String, i32)>, // (npc id, kill count)
-	pub sights: Vec<String>, // npc IDs
-	pub chats: Vec<String>, // npc IDs
+	pub sights: Vec<String>,       // npc IDs
+	pub chats: Vec<String>,        // npc IDs
 }
 
 #[derive(Debug, Clone)]
@@ -372,7 +385,9 @@ impl CreativePower {
 			7 => Ok(CreativePower::ModifyRainPower),
 			8 => Ok(CreativePower::ModifyTimeRate(r.read_f32()?)),
 			9 => Ok(CreativePower::FreezeRainPower(r.read_bool()?)),
-			10 => Ok(CreativePower::FreezeWindDirectionAndStrength(r.read_bool()?)),
+			10 => Ok(CreativePower::FreezeWindDirectionAndStrength(
+				r.read_bool()?,
+			)),
 			11 => Ok(CreativePower::FarPlacementRangePower),
 			12 => Ok(CreativePower::DifficultySliderPower(r.read_f32()?)),
 			13 => Ok(CreativePower::StopBiomeSpreadPower(r.read_bool()?)),

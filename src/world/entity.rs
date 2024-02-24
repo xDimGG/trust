@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 
-use crate::world::binary::FileReader;
 use crate::binary::writer::Writer;
+use crate::world::binary::FileReader;
 use crate::world::types::WorldDecodeError;
 
 #[derive(Debug, Clone)]
@@ -33,14 +33,9 @@ pub struct EntityItem {
 
 #[derive(Debug, Clone)]
 pub enum EntityInner {
-	Dummy {
-		npc: i16,
-	},
+	Dummy { npc: i16 },
 	ItemFrame(EntityItem),
-	LogicSensor {
-		logic_check: u8,
-		on: bool,
-	},
+	LogicSensor { logic_check: u8, on: bool },
 	DisplayDoll(DisplayDoll),
 	WeaponsRack(EntityItem),
 	HatRack(HatRack),
@@ -88,18 +83,16 @@ impl EntityInner {
 
 	pub fn write<T: Write>(&self, w: &mut Writer<T>) -> io::Result<()> {
 		match self {
-			EntityInner::Dummy { npc } => {
-				w.write_i16(*npc)
-			},
+			EntityInner::Dummy { npc } => w.write_i16(*npc),
 			EntityInner::ItemFrame(frame) => {
 				w.write_i16(frame.id)?;
 				w.write_byte(frame.prefix)?;
 				w.write_i16(frame.stack)
-			},
+			}
 			EntityInner::LogicSensor { logic_check, on } => {
 				w.write_byte(*logic_check)?;
 				w.write_bool(*on)
-			},
+			}
 			EntityInner::DisplayDoll(doll) => {
 				let mut item_flags = 0;
 				for (i, item) in doll.items.iter().enumerate().rev() {
@@ -140,12 +133,12 @@ impl EntityInner {
 				}
 
 				Ok(())
-			},
+			}
 			EntityInner::WeaponsRack(rack) => {
 				w.write_i16(rack.id)?;
 				w.write_byte(rack.prefix)?;
 				w.write_i16(rack.stack)
-			},
+			}
 			EntityInner::HatRack(rack) => {
 				let mut flags = 0;
 				for item in rack.items.iter().rev() {
@@ -181,12 +174,12 @@ impl EntityInner {
 				}
 
 				Ok(())
-			},
+			}
 			EntityInner::FoodPlatter(platter) => {
 				w.write_i16(platter.id)?;
 				w.write_byte(platter.prefix)?;
 				w.write_i16(platter.stack)
-			},
+			}
 			EntityInner::TeleportationPylon => Ok(()),
 		}
 	}
@@ -194,8 +187,15 @@ impl EntityInner {
 	pub fn decode(r: &mut FileReader, kind: u8) -> Result<Self, WorldDecodeError> {
 		match kind {
 			0 => Ok(EntityInner::Dummy { npc: r.read_i16()? }),
-			1 => Ok(EntityInner::ItemFrame(EntityItem { id: r.read_i16()?, prefix: r.read_byte()?, stack: r.read_i16()? })),
-			2 => Ok(EntityInner::LogicSensor { logic_check: r.read_byte()?, on: r.read_bool()? }),
+			1 => Ok(EntityInner::ItemFrame(EntityItem {
+				id: r.read_i16()?,
+				prefix: r.read_byte()?,
+				stack: r.read_i16()?,
+			})),
+			2 => Ok(EntityInner::LogicSensor {
+				logic_check: r.read_byte()?,
+				on: r.read_bool()?,
+			}),
 			3 => {
 				let mut doll = DisplayDoll::default();
 				let mut item_flags = r.read_byte()?;
@@ -208,7 +208,7 @@ impl EntityInner {
 						item.stack = r.read_i16()?;
 					}
 					item_flags >>= 1;
-				};
+				}
 
 				for item in &mut doll.dyes {
 					if dye_flags & 1 == 1 {
@@ -217,14 +217,14 @@ impl EntityInner {
 						item.stack = r.read_i16()?;
 					}
 					dye_flags >>= 1;
-				};
+				}
 
 				Ok(EntityInner::DisplayDoll(doll))
 			}
 			4 => Ok(EntityInner::WeaponsRack(EntityItem {
 				id: r.read_i16()?,
 				prefix: r.read_byte()?,
-				stack: r.read_i16()?
+				stack: r.read_i16()?,
 			})),
 			5 => {
 				let mut rack = HatRack::default();
@@ -237,7 +237,7 @@ impl EntityInner {
 						item.stack = r.read_i16()?;
 					}
 					flags >>= 1;
-				};
+				}
 
 				for item in &mut rack.dyes {
 					if flags & 1 == 1 {
@@ -246,7 +246,7 @@ impl EntityInner {
 						item.stack = r.read_i16()?;
 					}
 					flags >>= 1;
-				};
+				}
 
 				Ok(EntityInner::HatRack(rack))
 			}

@@ -1,4 +1,4 @@
-use crate::binary::types::{Text, RGB, Vector2};
+use crate::binary::types::{Text, Vector2, RGB};
 use crate::world::types::WorldDecodeError;
 
 pub struct FileReader {
@@ -48,35 +48,67 @@ impl FileReader {
 	}
 
 	pub fn read_u16(&mut self) -> R<u16> {
-		Ok(u16::from_le_bytes(self.read_bytes(2)?.try_into().map_err(|_| WorldDecodeError::InvalidNumber)?))
+		Ok(u16::from_le_bytes(
+			self.read_bytes(2)?
+				.try_into()
+				.map_err(|_| WorldDecodeError::InvalidNumber)?,
+		))
 	}
 
 	pub fn read_i16(&mut self) -> R<i16> {
-		Ok(i16::from_le_bytes(self.read_bytes(2)?.try_into().map_err(|_| WorldDecodeError::InvalidNumber)?))
+		Ok(i16::from_le_bytes(
+			self.read_bytes(2)?
+				.try_into()
+				.map_err(|_| WorldDecodeError::InvalidNumber)?,
+		))
 	}
 
 	pub fn read_u32(&mut self) -> R<u32> {
-		Ok(u32::from_le_bytes(self.read_bytes(4)?.try_into().map_err(|_| WorldDecodeError::InvalidNumber)?))
+		Ok(u32::from_le_bytes(
+			self.read_bytes(4)?
+				.try_into()
+				.map_err(|_| WorldDecodeError::InvalidNumber)?,
+		))
 	}
 
 	pub fn read_i32(&mut self) -> R<i32> {
-		Ok(i32::from_le_bytes(self.read_bytes(4)?.try_into().map_err(|_| WorldDecodeError::InvalidNumber)?))
+		Ok(i32::from_le_bytes(
+			self.read_bytes(4)?
+				.try_into()
+				.map_err(|_| WorldDecodeError::InvalidNumber)?,
+		))
 	}
 
 	pub fn read_u64(&mut self) -> R<u64> {
-		Ok(u64::from_le_bytes(self.read_bytes(8)?.try_into().map_err(|_| WorldDecodeError::InvalidNumber)?))
+		Ok(u64::from_le_bytes(
+			self.read_bytes(8)?
+				.try_into()
+				.map_err(|_| WorldDecodeError::InvalidNumber)?,
+		))
 	}
 
 	pub fn read_i64(&mut self) -> R<i64> {
-		Ok(i64::from_le_bytes(self.read_bytes(8)?.try_into().map_err(|_| WorldDecodeError::InvalidNumber)?))
+		Ok(i64::from_le_bytes(
+			self.read_bytes(8)?
+				.try_into()
+				.map_err(|_| WorldDecodeError::InvalidNumber)?,
+		))
 	}
 
 	pub fn read_f32(&mut self) -> R<f32> {
-		Ok(f32::from_le_bytes(self.read_bytes(4)?.try_into().map_err(|_| WorldDecodeError::InvalidNumber)?))
+		Ok(f32::from_le_bytes(
+			self.read_bytes(4)?
+				.try_into()
+				.map_err(|_| WorldDecodeError::InvalidNumber)?,
+		))
 	}
 
 	pub fn read_f64(&mut self) -> R<f64> {
-		Ok(f64::from_le_bytes(self.read_bytes(8)?.try_into().map_err(|_| WorldDecodeError::InvalidNumber)?))
+		Ok(f64::from_le_bytes(
+			self.read_bytes(8)?
+				.try_into()
+				.map_err(|_| WorldDecodeError::InvalidNumber)?,
+		))
 	}
 
 	pub fn read_vector2(&mut self) -> R<Vector2> {
@@ -97,7 +129,9 @@ impl FileReader {
 
 	pub fn read_string(&mut self) -> R<String> {
 		let length = self.read_length()?;
-		Ok(std::str::from_utf8(self.read_bytes(length)?).map_err(WorldDecodeError::InvalidString)?.to_owned())
+		Ok(std::str::from_utf8(self.read_bytes(length)?)
+			.map_err(WorldDecodeError::InvalidString)?
+			.to_owned())
 	}
 
 	pub fn read_text(&mut self) -> R<Text> {

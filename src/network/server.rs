@@ -1,17 +1,22 @@
+use anyhow;
 use std::cmp::{max, min};
 use std::net::SocketAddr;
 use std::pin::Pin;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{self, AsyncReadExt};
-use tokio::sync::{Mutex, RwLock, broadcast};
-use tokio::select;
 use std::sync::Arc;
-use anyhow;
+use tokio::io::{self, AsyncReadExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::select;
+use tokio::sync::{broadcast, Mutex, RwLock};
 
-use crate::network::messages::{self, Sanitize, Message, DropItem, ConnectionApprove, SpawnResponse, NPCInfo, KillCount, WorldTotals, PillarShieldStrengths, AnglerQuest};
 use crate::binary::types::{Text, TextMode, Vector2};
+use crate::network::messages::{
+	self, AnglerQuest, ConnectionApprove, DropItem, KillCount, Message, NPCInfo,
+	PillarShieldStrengths, Sanitize, SpawnResponse, WorldTotals,
+};
+use crate::network::utils::{
+	encode_tiles, encode_world_header, get_section_x, get_section_y, get_sections_near,
+};
 use crate::world::types::World;
-use crate::network::utils::{get_sections_near, encode_tiles, encode_world_header, get_section_x, get_section_y};
 
 use super::messages::MessageDecodeError;
 
@@ -55,7 +60,7 @@ impl Client {
 			state: ConnectionState::New,
 			details: None,
 			uuid: None,
-    	health: None,
+			health: None,
 			buffs: None,
 			mana: None,
 			loadout: None,
@@ -64,7 +69,14 @@ impl Client {
 		}
 	}
 
-	pub fn encode_sections(&mut self, world: &World, sec_x_start: usize, sec_x_end: usize, sec_y_start: usize, sec_y_end: usize) -> Result<Vec<Message>, MessageDecodeError> {
+	pub fn encode_sections(
+		&mut self,
+		world: &World,
+		sec_x_start: usize,
+		sec_x_end: usize,
+		sec_y_start: usize,
+		sec_y_end: usize,
+	) -> Result<Vec<Message>, MessageDecodeError> {
 		let mut msgs = vec![];
 		for x in sec_x_start..sec_x_end {
 			for y in sec_y_start..sec_y_end {
@@ -92,7 +104,7 @@ impl Server {
 	pub fn new(world: World, password: &str) -> Server {
 		// https://github.com/rust-lang/rust/issues/44796#issuecomment-967747810
 		const INIT_CLIENT_NONE: Option<Client> = None;
-    let (tx, _) = broadcast::channel(1024);
+		let (tx, _) = broadcast::channel(1024);
 
 		Server {
 			world: RwLock::new(world),
@@ -109,9 +121,7 @@ impl Server {
 		loop {
 			let (mut stream, addr) = listener.accept().await?;
 			let rc = arc.clone();
-			tokio::spawn(async move {
-				rc.accept(&mut stream, addr).await
-			});
+			tokio::spawn(async move { rc.accept(&mut stream, addr).await });
 		}
 	}
 
@@ -124,11 +134,20 @@ impl Server {
 		let src = {
 			let mut clients = self.clients.lock().await;
 			let Some(id) = clients.iter().position(Option::is_none) else {
-				Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "CLI.ServerIsFull".to_owned())).write_stream(Pin::new(&mut wh)).await?;
-				return Ok(())
+				Message::ConnectionRefuse(Text(
+					TextMode::LocalizationKey,
+					"CLI.ServerIsFull".to_owned(),
+				))
+				.write_stream(Pin::new(&mut wh))
+				.await?;
+				return Ok(());
 			};
 			let world = self.world.read().await;
-			clients[id] = Some(Client::new(addr, get_section_x(world.header.width as usize), get_section_y(world.header.height as usize)));
+			clients[id] = Some(Client::new(
+				addr,
+				get_section_x(world.header.width as usize),
+				get_section_y(world.header.height as usize),
+			));
 			id
 		};
 
@@ -168,7 +187,12 @@ impl Server {
 		}
 	}
 
-	async fn handle_message(&self, msg: Message, src: usize, tx: &mut broadcast::Sender<(Message, Option<usize>)>) -> anyhow::Result<Vec<Message>> {
+	async fn handle_message(
+		&self,
+		msg: Message,
+		src: usize,
+		tx: &mut broadcast::Sender<(Message, Option<usize>)>,
+	) -> anyhow::Result<Vec<Message>> {
 		let mut clients = self.clients.lock().await;
 		let client = clients[src].as_mut().unwrap();
 
@@ -177,7 +201,7 @@ impl Server {
 			// If their version does not match, refuse connection
 			Message::VersionIdentifier(version) => {
 				if client.state != ConnectionState::New {
-					return Ok(vec![])
+					return Ok(vec![]);
 				}
 
 				if version == GAME_VERSION {
@@ -194,7 +218,10 @@ impl Server {
 					}
 				} else {
 					println!("Player tried joining with unsupported version {}", version);
-					vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.4".to_owned()))]
+					vec![Message::ConnectionRefuse(Text(
+						TextMode::LocalizationKey,
+						"LegacyMultiplayer.4".to_owned(),
+					))]
 				}
 			}
 			// The client sends back the password. If it's correct, we may send back their dedicated user id
@@ -209,7 +236,10 @@ impl Server {
 						flag: false,
 					})]
 				} else {
-					vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))]
+					vec![Message::ConnectionRefuse(Text(
+						TextMode::LocalizationKey,
+						"LegacyMultiplayer.1".to_owned(),
+					))]
 				}
 			}
 			// The player sends their character's UUID. Terraria seems to do nothing with it so let's just store it
@@ -222,25 +252,37 @@ impl Server {
 			// Broadcast this player to all other players
 			Message::PlayerDetails(mut pd) => {
 				if client.state != ConnectionState::Authenticated {
-					return Ok(vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))])
+					return Ok(vec![Message::ConnectionRefuse(Text(
+						TextMode::LocalizationKey,
+						"LegacyMultiplayer.1".to_owned(),
+					))]);
 				}
 
-				let exists_same_name = clients
-					.iter()
-					.any(
-						|c_opt| c_opt.as_ref().map_or(false,
-							|c| c.details.as_ref().map_or(false, |d| d.name == pd.name)));
+				let exists_same_name = clients.iter().any(|c_opt| {
+					c_opt.as_ref().map_or(false, |c| {
+						c.details.as_ref().map_or(false, |d| d.name == pd.name)
+					})
+				});
 				if exists_same_name {
 					// TODO: support NetworkText.FromKey substitutions
-					return Ok(vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.5".to_owned()))])
+					return Ok(vec![Message::ConnectionRefuse(Text(
+						TextMode::LocalizationKey,
+						"LegacyMultiplayer.5".to_owned(),
+					))]);
 				}
 
 				if pd.name.len() > MAX_NAME_LEN {
-					return Ok(vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "Net.NameTooLong".to_owned()))])
+					return Ok(vec![Message::ConnectionRefuse(Text(
+						TextMode::LocalizationKey,
+						"Net.NameTooLong".to_owned(),
+					))]);
 				}
 
 				if pd.name.is_empty() {
-					return Ok(vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "Net.EmptyName".to_owned()))])
+					return Ok(vec![Message::ConnectionRefuse(Text(
+						TextMode::LocalizationKey,
+						"Net.EmptyName".to_owned(),
+					))]);
 				}
 
 				// TODO: compare client difficulty with world difficulty
@@ -291,7 +333,10 @@ impl Server {
 			}
 			Message::SpawnRequest(sr) => {
 				if client.state != ConnectionState::DetailsReceived {
-					return Ok(vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))])
+					return Ok(vec![Message::ConnectionRefuse(Text(
+						TextMode::LocalizationKey,
+						"LegacyMultiplayer.1".to_owned(),
+					))]);
 				}
 
 				let w = self.world.read().await;
@@ -305,23 +350,30 @@ impl Server {
 
 				let x_max = get_section_x(w.header.width as usize);
 				let y_max = get_section_y(w.header.height as usize);
-				let (xs, xe, ys, ye) = get_sections_near(w.header.spawn_x, w.header.spawn_y, x_max, y_max);
+				let (xs, xe, ys, ye) =
+					get_sections_near(w.header.spawn_x, w.header.spawn_y, x_max, y_max);
 				let mut secs = c.encode_sections(&w, xs, xe, ys, ye)?;
 				count += secs.len();
 				res.append(&mut secs);
 
-				if sr.x >= 10 && sr.x <= (w.header.width - 10) && sr.y >= 10 && sr.y <= (w.header.height - 10) {
+				if sr.x >= 10
+					&& sr.x <= (w.header.width - 10)
+					&& sr.y >= 10 && sr.y <= (w.header.height - 10)
+				{
 					let (xs, xe, ys, ye) = get_sections_near(sr.x, sr.y, x_max - 1, y_max - 1);
 					let mut secs = c.encode_sections(&w, xs, xe, ys, ye)?;
 					count += secs.len();
 					res.append(&mut secs);
 				}
 
-				res.insert(1, Message::SpawnResponse(SpawnResponse {
-					status: count as i32,
-					text: Text(TextMode::LocalizationKey, "LegacyInterface.44".to_owned()),
-					flags: 0,
-				}));
+				res.insert(
+					1,
+					Message::SpawnResponse(SpawnResponse {
+						status: count as i32,
+						text: Text(TextMode::LocalizationKey, "LegacyInterface.44".to_owned()),
+						flags: 0,
+					}),
+				);
 
 				// if (flag4) {
 				//   for (int sectionX = x1; sectionX <= num13; ++sectionX) {
@@ -329,7 +381,7 @@ impl Server {
 				//       NetMessage.SendSection(this.whoAmI, sectionX, sectionY);
 				//   }
 				// }
-				
+
 				// for (int index10 = 0; index10 < portalSections.Count; ++index10)
 				//   NetMessage.SendSection(this.whoAmI, portalSections[index10].X, portalSections[index10].Y);
 
@@ -371,7 +423,9 @@ impl Server {
 				// }
 
 				for (i, &kc) in w.header.npc_kill_counts.iter().enumerate() {
-					if i >= 290 { break }
+					if i >= 290 {
+						break;
+					}
 					res.push(Message::KillCount(KillCount {
 						id: i as i16,
 						amount: kc,
@@ -408,8 +462,13 @@ impl Server {
 			Message::PlayerSpawnRequest(mut psr) => {
 				psr.sanitize(src as u8);
 
-				if client.state != ConnectionState::DetailsReceived && client.state != ConnectionState::Complete {
-					return Ok(vec![Message::ConnectionRefuse(Text(TextMode::LocalizationKey, "LegacyMultiplayer.1".to_owned()))])
+				if client.state != ConnectionState::DetailsReceived
+					&& client.state != ConnectionState::Complete
+				{
+					return Ok(vec![Message::ConnectionRefuse(Text(
+						TextMode::LocalizationKey,
+						"LegacyMultiplayer.1".to_owned(),
+					))]);
 				}
 
 				tx.send((Message::PlayerSpawnRequest(psr), Some(src)))?;
@@ -424,7 +483,10 @@ impl Server {
 				let world = self.world.read().await;
 
 				vec![
-					Message::AnglerQuest(AnglerQuest { id: world.header.angler_quest as u8, finished: false }),
+					Message::AnglerQuest(AnglerQuest {
+						id: world.header.angler_quest as u8,
+						finished: false,
+					}),
 					Message::PlayerSpawnResponse,
 				]
 			}
@@ -438,15 +500,18 @@ impl Server {
 				if ppt.action == 0 && ppt.target_type == 0 {
 					let world = self.world.read().await;
 					let tile = &world.tiles[ppt.x as usize][ppt.y as usize];
-					tx.send((Message::DropItem(DropItem {
-						id: 0,
-						position: Vector2(ppt.x as f32 * TILE, ppt.y as f32 * TILE),
-						velocity: Vector2(0., 1.),
-						item_id: tile.id,
-						own_ignore: false,
-						prefix: 0,
-						stack: 1,
-					}), None))?;
+					tx.send((
+						Message::DropItem(DropItem {
+							id: 0,
+							position: Vector2(ppt.x as f32 * TILE, ppt.y as f32 * TILE),
+							velocity: Vector2(0., 1.),
+							item_id: tile.id,
+							own_ignore: false,
+							prefix: 0,
+							stack: 1,
+						}),
+						None,
+					))?;
 				}
 				tx.send((Message::UpdateTile(ppt), Some(src)))?;
 				vec![]
@@ -465,8 +530,8 @@ impl Server {
 				let max_sec_x = get_section_x(w.header.width as usize);
 				let max_sec_y = get_section_y(w.header.height as usize);
 
-				let sec_x_start  = max(get_section_x((pa.position.0 / TILE) as usize) - 1, 0);
-				let sec_y_start  = max(get_section_y((pa.position.1 / TILE) as usize) - 1, 0);
+				let sec_x_start = max(get_section_x((pa.position.0 / TILE) as usize) - 1, 0);
+				let sec_y_start = max(get_section_y((pa.position.1 / TILE) as usize) - 1, 0);
 				let sec_x_end = min(sec_x_start + 1, max_sec_x);
 				let sec_y_end = min(sec_y_start + 1, max_sec_y);
 

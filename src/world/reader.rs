@@ -1,9 +1,9 @@
+use crate::world::binary::FileReader;
+use crate::world::entity::*;
+use crate::world::tile::*;
+use crate::world::types::*;
 use std::time::{Duration, UNIX_EPOCH};
 use std::{collections::HashSet, fs, path::Path};
-use crate::world::binary::FileReader;
-use crate::world::types::*;
-use crate::world::tile::*;
-use crate::world::entity::*;
 
 pub const EPOCH_DIFFERENCE: u64 = 719162 * 24 * 60 * 60 * 1000;
 
@@ -31,39 +31,39 @@ impl World {
 		} else {
 			todo!("implement v1 before release 88");
 		}
-	} 
+	}
 
 	pub fn read_world_v2(r: &mut FileReader) -> Result<World, WorldDecodeError> {
 		r.seek(0);
 		let metadata = Self::read_metadata(r)?;
 		let format = Self::read_format(r)?;
 		if r.get_cur() != format.positions[0] as usize {
-			return Err(WorldDecodeError::PositionCheckFailed("format".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("format".to_owned()));
 		}
 
 		let header = Self::read_header(r, &metadata)?;
 		if r.get_cur() != format.positions[1] as usize {
-			return Err(WorldDecodeError::PositionCheckFailed("header".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("header".to_owned()));
 		}
 
 		let tiles = Self::read_tiles(r, &format, &header)?;
 		if r.get_cur() != format.positions[2] as usize {
-			return Err(WorldDecodeError::PositionCheckFailed("tiles".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("tiles".to_owned()));
 		}
 
 		let chests = Self::read_chests(r)?;
 		if r.get_cur() != format.positions[3] as usize {
-			return Err(WorldDecodeError::PositionCheckFailed("chests".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("chests".to_owned()));
 		}
 
 		let signs = Self::read_signs(r, &tiles)?;
 		if r.get_cur() != format.positions[4] as usize {
-			return Err(WorldDecodeError::PositionCheckFailed("signs".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("signs".to_owned()));
 		}
 
 		let npcs = Self::read_npcs(r, &metadata)?;
 		if r.get_cur() != format.positions[5] as usize {
-			return Err(WorldDecodeError::PositionCheckFailed("npcs".to_owned()))
+			return Err(WorldDecodeError::PositionCheckFailed("npcs".to_owned()));
 		}
 
 		let version = metadata.version;
@@ -76,50 +76,79 @@ impl World {
 			};
 
 			if r.get_cur() != format.positions[6] as usize {
-				return Err(WorldDecodeError::PositionCheckFailed("entities".to_owned()))
+				return Err(WorldDecodeError::PositionCheckFailed("entities".to_owned()));
 			}
 
 			te
-		} else { vec![] };
+		} else {
+			vec![]
+		};
 
 		let weighted_pressure_plates = if version >= 170 {
 			let wpp = Self::read_weighted_pressure_plates(r)?;
 			if r.get_cur() != format.positions[7] as usize {
-				return Err(WorldDecodeError::PositionCheckFailed("weighted_pressure_plates".to_owned()))
+				return Err(WorldDecodeError::PositionCheckFailed(
+					"weighted_pressure_plates".to_owned(),
+				));
 			}
 
 			wpp
-		} else { vec![] };
+		} else {
+			vec![]
+		};
 
 		let room_locations = if version >= 189 {
 			let rl = Self::read_room_locations(r)?;
 			if r.get_cur() != format.positions[8] as usize {
-				return Err(WorldDecodeError::PositionCheckFailed("room_locations".to_owned()))
+				return Err(WorldDecodeError::PositionCheckFailed(
+					"room_locations".to_owned(),
+				));
 			}
 
 			rl
-		} else { vec![] };
+		} else {
+			vec![]
+		};
 
 		let bestiary = if version >= 210 {
 			let be = Self::read_bestiary(r)?;
 			if r.get_cur() != format.positions[9] as usize {
-				return Err(WorldDecodeError::PositionCheckFailed("bestiary".to_owned()))
+				return Err(WorldDecodeError::PositionCheckFailed("bestiary".to_owned()));
 			}
 
 			be
-		} else { todo!("WorldFile.LoadBestiaryForVersionsBefore210()") };
+		} else {
+			todo!("WorldFile.LoadBestiaryForVersionsBefore210()")
+		};
 
 		let creative_powers = if version >= 220 {
 			let be = Self::read_creative_powers(r)?;
 			if r.get_cur() != format.positions[10] as usize {
-				return Err(WorldDecodeError::PositionCheckFailed("creative_powers".to_owned()))
+				return Err(WorldDecodeError::PositionCheckFailed(
+					"creative_powers".to_owned(),
+				));
 			}
 
 			be
-		} else { vec![] };
+		} else {
+			vec![]
+		};
 
 		if Self::validate_footer(r, &header)? {
-			Ok(World { metadata, format, header, tiles, chests, signs, npcs, entities, weighted_pressure_plates, room_locations, bestiary, creative_powers })
+			Ok(World {
+				metadata,
+				format,
+				header,
+				tiles,
+				chests,
+				signs,
+				npcs,
+				entities,
+				weighted_pressure_plates,
+				room_locations,
+				bestiary,
+				creative_powers,
+			})
 		} else {
 			Err(WorldDecodeError::InvalidFooter)
 		}
@@ -130,20 +159,24 @@ impl World {
 		let (file_type, revision, favorite) = if version >= 135 {
 			let magic = r.read_bytes(7)?;
 			if magic != MAGIC_STRING {
-				return Err(WorldDecodeError::BadFileSignature)
+				return Err(WorldDecodeError::BadFileSignature);
 			}
 
-			(FileType::from(r.read_byte()?), r.read_u32()?, (r.read_u64()? & 1) == 1)
+			(
+				FileType::from(r.read_byte()?),
+				r.read_u32()?,
+				(r.read_u64()? & 1) == 1,
+			)
 		} else {
 			(FileType::World, 0, false)
 		};
 
 		if file_type != FileType::World {
-			return Err(WorldDecodeError::ExpectedWorldType)
+			return Err(WorldDecodeError::ExpectedWorldType);
 		}
 
 		if version > 279 {
-			return Err(WorldDecodeError::UnsupportedVersion(version))
+			return Err(WorldDecodeError::UnsupportedVersion(version));
 		}
 
 		Ok(Metadata {
@@ -176,22 +209,36 @@ impl World {
 			}
 		}
 
-		Ok(Format { positions, importance })
+		Ok(Format {
+			positions,
+			importance,
+		})
 	}
 
-	pub fn read_header(r: &mut FileReader, metadata: &Metadata) -> Result<Header, WorldDecodeError> {
+	pub fn read_header(
+		r: &mut FileReader,
+		metadata: &Metadata,
+	) -> Result<Header, WorldDecodeError> {
 		let version = metadata.version;
 		let name = r.read_string()?;
 		let (seed_text, worldgen_version) = if version >= 179 {
 			(
-				if version == 179 { r.read_i32()?.to_string() } else { r.read_string()? },
-				r.read_u64()?
+				if version == 179 {
+					r.read_i32()?.to_string()
+				} else {
+					r.read_string()?
+				},
+				r.read_u64()?,
 			)
 		} else {
 			("".to_owned(), 0)
 		};
 
-		let uuid = if version >= 181 { Some(r.read_bytes(16)?.try_into().unwrap()) } else { None };
+		let uuid = if version >= 181 {
+			Some(r.read_bytes(16)?.try_into().unwrap())
+		} else {
+			None
+		};
 
 		let id = r.read_i32()?;
 		let left = r.read_i32()?;
@@ -204,13 +251,18 @@ impl World {
 		let game_mode: GameMode = (if version >= 209 {
 			r.read_i32()? as u8
 		} else {
-			let gm = if version >= 112 { r.read_bool()? as u8 } else { 0 };
+			let gm = if version >= 112 {
+				r.read_bool()? as u8
+			} else {
+				0
+			};
 			if version == 208 && r.read_bool()? {
 				2
 			} else {
 				gm
 			}
-		}).into();
+		})
+		.into();
 
 		let world_drunk = version >= 222 && r.read_bool()?;
 		let world_for_the_worthy = version >= 227 && r.read_bool()?;
@@ -219,13 +271,19 @@ impl World {
 		let world_not_the_bees = version >= 241 && r.read_bool()?;
 		let world_remix = version >= 249 && r.read_bool()?;
 		let world_no_traps = version >= 266 && r.read_bool()?;
-		let world_zenith = if version >= 267 { r.read_bool()? } else { world_drunk && world_remix };
+		let world_zenith = if version >= 267 {
+			r.read_bool()?
+		} else {
+			world_drunk && world_remix
+		};
 
 		// https://learn.microsoft.com/en-us/dotnet/api/system.datetime.now?view=net-8.0#remarks
 		let creation_time = if version >= 141 {
 			let b = r.read_u64()? << 2 >> 2;
 			UNIX_EPOCH + Duration::from_millis(b / 10_000 - EPOCH_DIFFERENCE)
-		} else { UNIX_EPOCH };
+		} else {
+			UNIX_EPOCH
+		};
 
 		let moon_type = r.read_byte()? as i32;
 		let tree_x = [r.read_i32()?, r.read_i32()?, r.read_i32()?];
@@ -274,9 +332,13 @@ impl World {
 		let invasion_delay = r.read_i32()?;
 		let invasion_size = r.read_i32()?;
 		let invasion_type = r.read_i32()?;
-		let invasion_x= r.read_f64()?;
+		let invasion_x = r.read_f64()?;
 		let slime_rain_time = if version >= 118 { r.read_f64()? } else { 0. };
-		let sundial_cooldown = if version >= 113 { r.read_byte()? as i32 } else { 0 };
+		let sundial_cooldown = if version >= 113 {
+			r.read_byte()? as i32
+		} else {
+			0
+		};
 		let temp_raining = r.read_bool()?;
 		let temp_rain_time = r.read_i32()?;
 		let temp_max_rain = r.read_f32()?;
@@ -298,7 +360,9 @@ impl World {
 				v.push(r.read_string()?)
 			}
 			v
-		} else { vec![] };
+		} else {
+			vec![]
+		};
 
 		let saved_angler = version >= 99 && r.read_bool()?;
 		let angler_quest = if version >= 101 { r.read_i32()? } else { 0 };
@@ -313,7 +377,9 @@ impl World {
 				kc.push(r.read_i32()?)
 			}
 			kc
-		} else { vec![] };
+		} else {
+			vec![]
+		};
 		let fast_forward_time_to_dawn = version >= 128 && r.read_bool()?;
 
 		let downed_fishron = version >= 131 && r.read_bool()?;
@@ -344,7 +410,9 @@ impl World {
 				npcs.push(r.read_i32()?)
 			}
 			npcs
-		} else { vec![] };
+		} else {
+			vec![]
+		};
 
 		let temp_sandstorm_happening = version >= 174 && r.read_bool()?;
 		let temp_sandstorm_time_left = if version >= 174 { r.read_i32()? } else { 0 };
@@ -356,9 +424,15 @@ impl World {
 		let downed_dd2_invasion_t2 = version >= 178 && r.read_bool()?;
 		let downed_dd2_invasion_t3 = version >= 178 && r.read_bool()?;
 
-		if version >= 193 { bg[8] = r.read_byte()? };
-		if version >= 215 { bg[9] = r.read_byte()? };
-		if version >= 194 { bg[10..].copy_from_slice(r.read_bytes(3)?) };
+		if version >= 193 {
+			bg[8] = r.read_byte()?
+		};
+		if version >= 215 {
+			bg[9] = r.read_byte()?
+		};
+		if version >= 194 {
+			bg[10..].copy_from_slice(r.read_bytes(3)?)
+		};
 
 		let combat_book_was_used = version >= 204 && r.read_bool()?;
 
@@ -587,7 +661,11 @@ impl World {
 		})
 	}
 
-	pub fn read_tiles(r: &mut FileReader, format: &Format, header: &Header) -> Result<Vec<Vec<Tile>>, WorldDecodeError> {
+	pub fn read_tiles(
+		r: &mut FileReader,
+		format: &Format,
+		header: &Header,
+	) -> Result<Vec<Vec<Tile>>, WorldDecodeError> {
 		let mut map = Vec::with_capacity(header.width as usize);
 		for _ in 0..header.width {
 			let mut column = Vec::with_capacity(header.height as usize);
@@ -623,7 +701,9 @@ impl World {
 			let mut items = Vec::with_capacity(n_3 as usize);
 			for _ in 0..items.capacity() {
 				let stack = r.read_i16()?;
-				let item = if stack == 0 { ChestItem::default() } else {
+				let item = if stack == 0 {
+					ChestItem::default()
+				} else {
 					ChestItem {
 						id: r.read_i32()?,
 						stack: if stack > 0 { stack } else { 1 },
@@ -639,20 +719,18 @@ impl World {
 				}
 			}
 
-			chests.push(Chest {
-				x,
-				y,
-				name,
-				items,
-			})
+			chests.push(Chest { x, y, name, items })
 		}
 
 		Ok(chests)
 	}
 
-	pub fn read_signs(r: &mut FileReader, tiles: &[Vec<Tile>]) -> Result<Vec<Sign>, WorldDecodeError> {
+	pub fn read_signs(
+		r: &mut FileReader,
+		tiles: &[Vec<Tile>],
+	) -> Result<Vec<Sign>, WorldDecodeError> {
 		let mut signs = Vec::with_capacity(r.read_i16()? as usize);
-	
+
 		for _ in 0..signs.capacity() {
 			let text = r.read_string()?;
 			let x = r.read_i32()?;
@@ -668,7 +746,10 @@ impl World {
 		Ok(signs)
 	}
 
-	pub fn read_npcs(r: &mut FileReader, metadata: &Metadata) -> Result<Vec<NPC>, WorldDecodeError> {
+	pub fn read_npcs(
+		r: &mut FileReader,
+		metadata: &Metadata,
+	) -> Result<Vec<NPC>, WorldDecodeError> {
 		let version = metadata.version;
 		let mut shimmers = HashSet::new();
 		if version >= 268 {
@@ -691,9 +772,22 @@ impl World {
 			let homeless = r.read_bool()?;
 			let home_x = r.read_i32()?;
 			let home_y = r.read_i32()?;
-			let variation = if version >= 213 && r.read_byte()? & 1 == 1 { r.read_i32()? } else { 0 };
+			let variation = if version >= 213 && r.read_byte()? & 1 == 1 {
+				r.read_i32()?
+			} else {
+				0
+			};
 
-			npcs.push(NPC { id, name, position, homeless, home_x, home_y, variation, shimmer: shimmers.contains(&id) })
+			npcs.push(NPC {
+				id,
+				name,
+				position,
+				homeless,
+				home_x,
+				home_y,
+				variation,
+				shimmer: shimmers.contains(&id),
+			})
 		}
 
 		if version >= 140 {
@@ -722,7 +816,9 @@ impl World {
 		Ok(entities)
 	}
 
-	pub fn read_weighted_pressure_plates(r: &mut FileReader) -> Result<Vec<WeightedPressurePlate>, WorldDecodeError> {
+	pub fn read_weighted_pressure_plates(
+		r: &mut FileReader,
+	) -> Result<Vec<WeightedPressurePlate>, WorldDecodeError> {
 		let mut wpp = Vec::with_capacity(r.read_i32()? as usize);
 		for _ in 0..wpp.capacity() {
 			wpp.push(WeightedPressurePlate {
@@ -763,10 +859,16 @@ impl World {
 			chats.push(r.read_string()?);
 		}
 
-		Ok(Bestiary { kills, sights, chats })
+		Ok(Bestiary {
+			kills,
+			sights,
+			chats,
+		})
 	}
 
-	pub fn read_creative_powers(r: &mut FileReader) -> Result<Vec<CreativePower>, WorldDecodeError> {
+	pub fn read_creative_powers(
+		r: &mut FileReader,
+	) -> Result<Vec<CreativePower>, WorldDecodeError> {
 		let mut powers = vec![];
 		while r.read_bool()? {
 			let power = CreativePower::decode_file(r)?;

@@ -57,7 +57,9 @@ impl Tile {
 				let x = r.read_i16()?;
 				let y = r.read_i16()?;
 				(x, if id == 144 { 0 } else { y })
-			} else { (-1, -1) };
+			} else {
+				(-1, -1)
+			};
 
 			let col = if h_3 & 8 == 8 { r.read_byte()? } else { 0 };
 
@@ -67,21 +69,33 @@ impl Tile {
 		};
 
 		let (wall, wall_color) = if h_1 & 4 == 4 {
-			(r.read_byte()? as u16, if h_3 & 16 == 16 { r.read_byte()? as u16 } else { 0 })
-		} else { (0, 0) };
+			(
+				r.read_byte()? as u16,
+				if h_3 & 16 == 16 {
+					r.read_byte()? as u16
+				} else {
+					0
+				},
+			)
+		} else {
+			(0, 0)
+		};
 
 		let liquid_bits = (h_1 & 0b11000) >> 3;
 		let (liquid_kind, liquid) = if liquid_bits > 0 {
-			(if h_3 & 128 == 128 {
-				Liquid::Shimmer // shimmer
-			} else {
-				match liquid_bits {
-					1 => Liquid::Water,
-					2 => Liquid::Lava,
-					3 => Liquid::Honey,
-					_ => unreachable!(),
-				}
-			}, r.read_byte()?)
+			(
+				if h_3 & 128 == 128 {
+					Liquid::Shimmer // shimmer
+				} else {
+					match liquid_bits {
+						1 => Liquid::Water,
+						2 => Liquid::Lava,
+						3 => Liquid::Honey,
+						_ => unreachable!(),
+					}
+				},
+				r.read_byte()?,
+			)
 		} else {
 			(Liquid::None, 0)
 		};
@@ -91,9 +105,13 @@ impl Tile {
 			// todo: add check for Main.tileSolid[(int) tile.type] || TileID.Sets.NonSolidSaveSlopes[(int) tile.type])
 			let (hb, sl) = if n_9 != 0 {
 				(n_9 == 1, n_9 - 1)
-			} else { (false, 0) };
+			} else {
+				(false, 0)
+			};
 			(h_2 & 2 == 2, h_2 & 4 == 4, h_2 & 8 == 8, hb, sl)
-		} else { (false, false, false, false, 0) };
+		} else {
+			(false, false, false, false, 0)
+		};
 
 		let (actuator, in_active, wire_4, wall) = if h_3 > 1 {
 			let wall_extended = if h_3 & 64 == 64 {
@@ -103,15 +121,21 @@ impl Tile {
 				} else {
 					0
 				}
-			} else { wall };
+			} else {
+				wall
+			};
 			(h_3 & 2 == 2, h_3 & 4 == 4, h_3 & 32 == 32, wall_extended)
-		} else { (false, false, false, wall) };
+		} else {
+			(false, false, false, wall)
+		};
 
 		let (invisible_block, invisible_wall, fullbright_block, fullbright_wall) = if h_4 > 1 {
 			(h_4 & 2 == 2, h_4 & 4 == 4, h_4 & 8 == 8, h_4 & 16 == 16)
-		} else { (false, false, false, false) };
+		} else {
+			(false, false, false, false)
+		};
 
-		let tile = Tile{
+		let tile = Tile {
 			id,
 			active,
 			frame_x,

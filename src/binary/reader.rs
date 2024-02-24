@@ -1,4 +1,4 @@
-use crate::binary::types::{Text, RGB, Vector2};
+use crate::binary::types::{Text, Vector2, RGB};
 
 pub struct Reader<'a> {
 	pub buf: &'a [u8],
@@ -74,7 +74,9 @@ impl<'a> Reader<'a> {
 
 	pub fn read_string(&mut self) -> String {
 		let length = self.read_length();
-		std::str::from_utf8(self.read_bytes(length)).unwrap_or("").to_string()
+		std::str::from_utf8(self.read_bytes(length))
+			.unwrap_or("")
+			.to_string()
 	}
 
 	pub fn read_text(&mut self) -> Text {

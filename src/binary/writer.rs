@@ -1,6 +1,6 @@
 use std::io::{Seek, Write};
 
-use crate::binary::types::{Text, RGB, Vector2};
+use crate::binary::types::{Text, Vector2, RGB};
 
 pub struct Writer<T> {
 	pub dst: T,
@@ -104,7 +104,7 @@ impl<T: Write> Write for Writer<T> {
 
 pub struct MessageWriter<T>(Writer<T>);
 
-impl<T: Write + Seek> MessageWriter<T>  {
+impl<T: Write + Seek> MessageWriter<T> {
 	pub fn new(dst: T, code: u8) -> Result<Self, std::io::Error> {
 		let mut w = Writer::new(dst);
 		w.write_u16(0)?;
