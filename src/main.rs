@@ -5,7 +5,7 @@ mod network;
 mod world;
 
 use binary::reader::Reader;
-use network::{server::Server, utils::rr};
+use network::server::Server;
 use std::path::Path;
 use world::{binary::FileReader, types::World};
 

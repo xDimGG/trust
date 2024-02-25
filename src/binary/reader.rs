@@ -80,7 +80,23 @@ impl<'a> Reader<'a> {
 	}
 
 	pub fn read_text(&mut self) -> Text {
-		Text(self.read_byte().into(), self.read_string())
+		let kind = self.read_byte();
+		match kind {
+			0 => Text::Literal(self.read_string()),
+			1 | 2 => {
+				let form = self.read_string();
+				let mut subs = Vec::with_capacity(self.read_byte() as usize);
+				for _ in 0..subs.capacity() {
+					subs.push(self.read_text())
+				}
+				if kind == 1 {
+					Text::Formattable(form, subs)
+				} else {
+					Text::Key(form, subs)
+				}
+			}
+			_ => Text::Invalid,
+		}
 	}
 
 	pub fn read_rgb(&mut self) -> RGB {

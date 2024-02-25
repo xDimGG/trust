@@ -76,8 +76,21 @@ impl<T: Write> Writer<T> {
 	}
 
 	pub fn write_text(&mut self, text: Text) -> Result<(), std::io::Error> {
-		self.write_byte(text.0 as u8)?;
-		self.write_string(text.1)
+		self.write_byte(text.code())?;
+		match text {
+			Text::Literal(lit) => {
+				self.write_string(lit)?
+			},
+			Text::Formattable(form, subs) | Text::Key(form, subs) => {
+				self.write_string(form)?;
+				self.write_byte(subs.len() as u8)?;
+				for sub in subs {
+					self.write_text(sub)?
+				}
+			},
+			_ => {},
+		};
+		Ok(())
 	}
 
 	pub fn write_rgb(&mut self, rgb: RGB) -> Result<(), std::io::Error> {

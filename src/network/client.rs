@@ -28,6 +28,7 @@ pub struct Client {
 	pub loadout: Option<messages::PlayerLoadout>,
 	pub inventory: Box<[Option<messages::PlayerInventorySlot>; MAX_INVENTORY_SLOTS]>,
 	pub loaded_sections: Vec<Vec<bool>>,
+	pub selected_item: u8,
 }
 
 impl Client {
@@ -46,6 +47,7 @@ impl Client {
 			loadout: None,
 			inventory: Box::new([INIT_SLOT_NONE; MAX_INVENTORY_SLOTS]),
 			loaded_sections: vec![vec![false; height]; width],
+			selected_item: 0,
 		}
 	}
 

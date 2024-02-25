@@ -1,4 +1,4 @@
-use crate::binary::types::{Text, Vector2, RGB};
+use crate::binary::types::{Vector2, RGB};
 use crate::world::types::WorldDecodeError;
 
 pub struct FileReader {
@@ -132,10 +132,6 @@ impl FileReader {
 		Ok(std::str::from_utf8(self.read_bytes(length)?)
 			.map_err(WorldDecodeError::InvalidString)?
 			.to_owned())
-	}
-
-	pub fn read_text(&mut self) -> R<Text> {
-		Ok(Text(self.read_byte()?.into(), self.read_string()?))
 	}
 
 	pub fn read_rgb(&mut self) -> R<RGB> {
