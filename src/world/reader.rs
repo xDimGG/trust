@@ -4,6 +4,7 @@ use crate::world::tile::*;
 use crate::world::types::*;
 use std::time::{Duration, UNIX_EPOCH};
 use std::{collections::HashSet, fs, path::Path};
+use crate::world::transpiled::tiles::*;
 
 pub const EPOCH_DIFFERENCE: u64 = 719162 * 24 * 60 * 60 * 1000;
 
@@ -738,7 +739,7 @@ impl World {
 
 			let t = &tiles[x as usize][y as usize];
 			// IDs from Main.tileSign; todo: automate these
-			if t.active && (t.id == 55 || t.id == 85 || t.id == 425 || t.id == 573) {
+			if t.active && matches!(t.id, SIGNS | TOMBSTONES | ANNOUNCEMENT_BOX | TATTERED_WOOD_SIGN) {
 				signs.push(Sign { x, y, text })
 			}
 		}

@@ -1,5 +1,6 @@
 use std::cmp::{max, min};
 use std::io::{self, BufWriter};
+use std::ops::{Add, Rem, Sub};
 
 use crate::binary::writer::Writer;
 use crate::network::messages::{Message, WorldHeader};
@@ -7,6 +8,11 @@ use crate::world::tile::Tile;
 use crate::world::types::{Header, World};
 use flate2::write::ZlibEncoder;
 use flate2::{Compress, Compression};
+use num_traits::Num;
+use rand::distributions::{Distribution, Standard};
+use rand::random;
+
+use crate::world::transpiled::tiles::*;
 
 #[allow(clippy::too_many_arguments)]
 // utility function for generating u8 bitmask from bools where first param is LSB
@@ -19,6 +25,12 @@ pub fn flags(a: bool, b: bool, c: bool, d: bool, e: bool, f: bool, g: bool, h: b
 		| (f as u8) << 5
 		| (g as u8) << 6
 		| (h as u8) << 7
+}
+
+// random in range (inclusive) for int types
+pub fn rr<T: Num + From<u8> + Clone>(lower: T, upper: T) -> T
+where Standard: Distribution<T> {
+	random::<T>() % (upper - lower.clone() + T::from(1u8)) + lower
 }
 
 const SECTION_WIDTH: usize = 200;
@@ -38,11 +50,11 @@ pub fn get_sections_near(
 	max_sec_x: usize,
 	max_sec_y: usize,
 ) -> (usize, usize, usize, usize) {
-	// -2, -1, +5, +3 are the values that the game uses. dont ask me
+	// these offsets are the value the are the values that the game uses. dont ask me
 	let sec_x_start = max(get_section_x(x as usize) - 2, 0);
-	let sec_x_end = min(sec_x_start + 5, max_sec_x);
+	let sec_x_end = min(sec_x_start + 4, max_sec_x);
 	let sec_y_start = max(get_section_y(y as usize) - 1, 0);
-	let sec_y_end = min(sec_y_start + 3, max_sec_y);
+	let sec_y_end = min(sec_y_start + 2, max_sec_y);
 
 	(sec_x_start, sec_x_end, sec_y_start, sec_y_end)
 }
@@ -90,36 +102,38 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> io::Result<Mes
 
 			last_tile = tile;
 
-			if tile.id >= 0 && world.format.importance[tile.id as usize] {
-				let fx = tile.frame_x;
-				let fy = tile.frame_y;
-				let is_chest = match tile.id {
-					21 | 467 => fx % 36 == 0 && fy % 36 == 0,
-					88 => fx % 54 == 0 && fy % 36 == 0,
-					_ => false,
-				};
-				if is_chest {
-					chest_tiles.push((x, y));
-				} else {
-					let is_sign = match tile.id {
-						55 | 85 | 425 | 573 => fx % 36 == 0 && fy % 36 == 0,
-						_ => false,
-					};
-					if is_sign {
-						sign_tiles.push((x, y));
-					} else {
-						let is_entity = match tile.id {
-							378 | 395 | 470 => fx % 36 == 0 && fy == 0,
-							520 => fx % 18 == 0 && fy == 0,
-							471 | 475 => fx % 54 == 0 && fy == 0,
-							597 => fx % 54 == 0 && fy % 72 == 0,
-							_ => false,
-						};
-						if is_entity {
-							entity_tiles.push((x, y));
-						}
-					}
-				}
+			if tile.id < 0 || !world.format.importance[tile.id as usize] {
+				continue;
+			}
+
+			let fx = tile.frame_x;
+			let fy = tile.frame_y;
+				
+			if match tile.id {
+				CONTAINERS | CONTAINERS_2 => fx % 36 == 0 && fy % 36 == 0,
+				DRESSERS => fx % 54 == 0 && fy % 36 == 0,
+				_ => false,
+			} {
+				chest_tiles.push((x, y));
+				continue;
+			}
+
+			if match tile.id {
+				SIGNS | TOMBSTONES | ANNOUNCEMENT_BOX | TATTERED_WOOD_SIGN => fx % 36 == 0 && fy % 36 == 0,
+				_ => false,
+			} {
+				sign_tiles.push((x, y));
+				continue;
+			}
+
+			if match tile.id {
+				TARGET_DUMMY | ITEM_FRAME | DISPLAY_DOLL => fx % 36 == 0 && fy == 0,
+				FOOD_PLATTER => fx % 18 == 0 && fy == 0,
+				WEAPONS_RACK_2 | HAT_RACK => fx % 54 == 0 && fy == 0,
+				TELEPORTATION_PYLON => fx % 54 == 0 && fy % 72 == 0,
+				_ => false,
+			} {
+				entity_tiles.push((x, y));
 			}
 		}
 	}

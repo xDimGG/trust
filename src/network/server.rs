@@ -1,4 +1,5 @@
 use anyhow;
+use rand::random;
 use std::cmp::{max, min};
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -10,93 +11,24 @@ use tokio::sync::{broadcast, Mutex, RwLock};
 
 use crate::binary::types::{Text, TextMode, Vector2};
 use crate::network::messages::{
-	self, AnglerQuest, ConnectionApprove, DropItem, KillCount, Message, NPCInfo,
-	PillarShieldStrengths, Sanitize, SpawnResponse, WorldTotals,
+	AnglerQuest, ConnectionApprove, DropItem, KillCount, Message, NPCInfo,
+	PillarShieldStrengths, SpawnResponse, WorldTotals, Sanitize,
 };
+use crate::network::client::{Client, ConnectionState, MAX_INVENTORY_SLOTS};
 use crate::network::utils::{
-	encode_tiles, encode_world_header, get_section_x, get_section_y, get_sections_near,
+	encode_world_header, get_section_x, get_section_y, get_sections_near,
 };
 use crate::world::types::World;
-
-use super::messages::MessageDecodeError;
 
 const GAME_VERSION: &str = "Terraria279";
 const MAX_CLIENTS: usize = 256;
 const MAX_NAME_LEN: usize = 20;
 const TILE: f32 = 16.;
 
-#[derive(PartialEq, Eq)]
-#[repr(u8)]
-pub enum ConnectionState {
-	New,
-	PendingAuthentication,
-	Authenticated,
-	DetailsReceived,
-	Complete,
-}
-
-const MAX_INVENTORY_SLOTS: usize = 350;
-
-pub struct Client {
-	pub addr: SocketAddr,
-	pub state: ConnectionState,
-	pub uuid: Option<String>,
-	pub details: Option<messages::PlayerDetails>,
-	pub health: Option<messages::PlayerHealth>,
-	pub mana: Option<messages::PlayerMana>,
-	pub buffs: Option<messages::PlayerBuffs>,
-	pub loadout: Option<messages::PlayerLoadout>,
-	pub inventory: Arc<Mutex<[Option<messages::PlayerInventorySlot>; MAX_INVENTORY_SLOTS]>>,
-	pub loaded_sections: Vec<Vec<bool>>,
-}
-
-impl Client {
-	pub fn new(addr: SocketAddr, width: usize, height: usize) -> Self {
-		// https://github.com/rust-lang/rust/issues/44796#issuecomment-967747810
-		const INIT_SLOT_NONE: Option<messages::PlayerInventorySlot> = None;
-
-		Self {
-			addr,
-			state: ConnectionState::New,
-			details: None,
-			uuid: None,
-			health: None,
-			buffs: None,
-			mana: None,
-			loadout: None,
-			inventory: Arc::new(Mutex::new([INIT_SLOT_NONE; MAX_INVENTORY_SLOTS])),
-			loaded_sections: vec![vec![false; height]; width],
-		}
-	}
-
-	pub fn encode_sections(
-		&mut self,
-		world: &World,
-		sec_x_start: usize,
-		sec_x_end: usize,
-		sec_y_start: usize,
-		sec_y_end: usize,
-	) -> Result<Vec<Message>, MessageDecodeError> {
-		let mut msgs = vec![];
-		for x in sec_x_start..sec_x_end {
-			for y in sec_y_start..sec_y_end {
-				if self.loaded_sections[x][y] {
-					continue;
-				}
-
-				self.loaded_sections[x][y] = true;
-				msgs.push(encode_tiles(world, x, y)?)
-			}
-		}
-
-		Ok(msgs)
-	}
-}
-
 pub struct Server {
 	pub world: RwLock<World>,
 	pub password: RwLock<String>,
-	pub clients: Arc<Mutex<[Option<Client>; MAX_CLIENTS]>>,
+	pub clients: Mutex<[Option<Client>; MAX_CLIENTS]>,
 	pub broadcast: broadcast::Sender<(Message, Option<usize>)>,
 }
 
@@ -109,7 +41,7 @@ impl Server {
 		Server {
 			world: RwLock::new(world),
 			password: RwLock::new(password.to_owned()),
-			clients: Arc::new(Mutex::new([INIT_CLIENT_NONE; MAX_CLIENTS])),
+			clients: Mutex::new([INIT_CLIENT_NONE; MAX_CLIENTS]),
 			broadcast: tx,
 		}
 	}
@@ -323,7 +255,7 @@ impl Server {
 				let idx = pis.slot_id as usize;
 				if idx < MAX_INVENTORY_SLOTS {
 					tx.send((Message::PlayerInventorySlot(pis.clone()), Some(src)))?;
-					client.inventory.as_ref().lock().await[idx] = Some(pis);
+					client.inventory[idx] = Some(pis);
 				}
 				vec![]
 			}
@@ -497,21 +429,25 @@ impl Server {
 				vec![]
 			}
 			Message::UpdateTile(ppt) => {
+				dbg!(&ppt);
 				if ppt.action == 0 && ppt.target_type == 0 {
 					let world = self.world.read().await;
 					let tile = &world.tiles[ppt.x as usize][ppt.y as usize];
-					tx.send((
-						Message::DropItem(DropItem {
-							id: 0,
-							position: Vector2(ppt.x as f32 * TILE, ppt.y as f32 * TILE),
-							velocity: Vector2(0., 1.),
-							item_id: tile.id,
-							own_ignore: false,
-							prefix: 0,
-							stack: 1,
-						}),
-						None,
-					))?;
+					let i = tile.get_dropped_item(client, &world, &mut 0, &mut 0, &mut 0);
+					if i > 0 {
+						tx.send((
+							Message::DropItem(DropItem {
+								id: 0,
+								position: Vector2(ppt.x as f32 * TILE, ppt.y as f32 * TILE),
+								velocity: Vector2(random::<f32>() * 6. - 3., (random::<f32>() * -2.5) - 1.5),
+								item_id: i,
+								own_ignore: false,
+								prefix: 0,
+								stack: 1,
+							}),
+							None,
+						))?;
+					}
 				}
 				tx.send((Message::UpdateTile(ppt), Some(src)))?;
 				vec![]
@@ -527,16 +463,21 @@ impl Server {
 				let w = self.world.read().await;
 				let c = client;
 
-				let max_sec_x = get_section_x(w.header.width as usize);
-				let max_sec_y = get_section_y(w.header.height as usize);
+				let x_max = get_section_x(w.header.width as usize);
+				let y_max = get_section_y(w.header.height as usize);
 
-				let sec_x_start = max(get_section_x((pa.position.0 / TILE) as usize) - 1, 0);
-				let sec_y_start = max(get_section_y((pa.position.1 / TILE) as usize) - 1, 0);
-				let sec_x_end = min(sec_x_start + 1, max_sec_x);
-				let sec_y_end = min(sec_y_start + 1, max_sec_y);
-
+				let xs = max(get_section_x((pa.position.0 / TILE) as usize) - 1, 0);
+				let xe = min(xs + 1, x_max);
+				let ys = max(get_section_y((pa.position.1 / TILE) as usize) - 1, 0);
+				let ye = min(ys + 1, y_max);
 				tx.send((Message::PlayerAction(pa), Some(src)))?;
-				c.encode_sections(&w, sec_x_start, sec_x_end, sec_y_start, sec_y_end)?
+
+				let sec = c.encode_sections(&w, xs, xe, ys, ye)?;
+				if sec.is_empty() {
+					vec![]
+				} else {
+					sec
+				}
 			}
 			// Just gets broadcasted
 			Message::PlayInstrument(mut pi) => {

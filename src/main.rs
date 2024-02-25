@@ -5,11 +5,8 @@ mod network;
 mod world;
 
 use binary::reader::Reader;
-use network::server::Server;
-use std::{
-	path::Path,
-	time::{Duration, UNIX_EPOCH},
-};
+use network::{server::Server, utils::rr};
+use std::path::Path;
 use world::{binary::FileReader, types::World};
 
 impl Drop for FileReader {
@@ -37,13 +34,10 @@ impl Drop for Reader<'_> {
 
 #[tokio::main]
 async fn main() {
-	// let world = World::from_file(Path::new("C:\\Users\\Dim\\Documents\\My Games\\Terraria\\Worlds\\dim.wld")).unwrap();
-	let world = World::from_file(Path::new(
-		"/mnt/c/Users/Dim/Documents/My Games/Terraria/Worlds/dim.wld",
-	))
-	.unwrap();
+	let world = World::from_file(Path::new("C:\\Users\\Dim\\Documents\\My Games\\Terraria\\Worlds\\dim.wld")).unwrap();
+	// let world = World::from_file(Path::new("/mnt/c/Users/Dim/Documents/My Games/Terraria/Worlds/dim.wld")).unwrap();
 	// let world = World::from_file(Path::new("/Users/angelolloti/Library/Application Support/Terraria/Worlds/workshop.wld")).unwrap();
-	let srv = Server::new(world, "pass");
+	let srv = Server::new(world, "");
 	srv.listen("127.0.0.1:7778").await.unwrap();
 
 	// let Some(user_dirs) = UserDirs::new() else {
