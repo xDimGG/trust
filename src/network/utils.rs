@@ -184,17 +184,16 @@ pub fn encode_world_header(h: &Header) -> Message {
 	Message::WorldHeader(WorldHeader {
 		time: 0,
 		time_flags: flags(
-			h.temp_day_time,
-			h.temp_blood_moon,
-			h.temp_eclipse,
+			h.day_time,
+			h.blood_moon,
+			h.eclipse,
 			false,
 			false,
 			false,
 			false,
 			false,
 		),
-		// time_flags: flags(true, h.temp_blood_moon, h.temp_eclipse, false, false, false, false, false),
-		moon_phase: h.temp_moon_phase as u8,
+		moon_phase: h.moon_phase as u8,
 		width: h.width as i16,
 		height: h.height as i16,
 		spawn_x: h.spawn_x as i16,
@@ -248,7 +247,7 @@ pub fn encode_world_header(h: &Header) -> Message {
 			.collect::<Vec<u8>>()
 			.try_into()
 			.unwrap_or([0; 13]),
-		max_raining: h.temp_max_rain,
+		max_raining: h.max_rain,
 		flags: [
 			// todo: support for server-side characters
 			flags(
@@ -299,7 +298,7 @@ pub fn encode_world_header(h: &Header) -> Message {
 				h.downed_pirates,
 				h.downed_frost,
 				h.downed_goblins,
-				h.temp_sandstorm_happening,
+				h.sandstorm_happening,
 				false,
 				h.downed_dd2_invasion_t1,
 				h.downed_dd2_invasion_t2,
@@ -307,7 +306,7 @@ pub fn encode_world_header(h: &Header) -> Message {
 			),
 			flags(
 				h.combat_book_was_used,
-				h.temp_lantern_night_manual,
+				h.lantern_night_manual,
 				h.downed_tower_solar,
 				h.downed_tower_vortex,
 				h.downed_tower_nebula,
@@ -368,6 +367,6 @@ pub fn encode_world_header(h: &Header) -> Message {
 		ore_tier_adamantite: h.ore_tier_adamantite as i16,
 		invasion_type: h.invasion_type as i8,
 		lobby_id: 0,
-		sandstorm_intended_severity: h.temp_sandstorm_intended_severity,
+		sandstorm_intended_severity: h.sandstorm_intended_severity,
 	})
 }

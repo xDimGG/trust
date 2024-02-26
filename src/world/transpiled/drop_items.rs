@@ -13,10 +13,10 @@ use rand::random;
 const TRACK_TYPE: &[i16] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2];
 
 impl Tile {
-	pub fn get_dropped_item(&self, c: &Client, w: &World, drop_count: &mut i16, secondary_drop: &mut i16, secondary_drop_count: &mut i16) -> i16 {
-		*drop_count = 1;
-		*secondary_drop = 0;
-		*secondary_drop_count = 1;
+	pub fn get_dropped_item(&self, c: &Client, w: &World, stack: &mut i16, secondary_item: &mut i16, secondary_stack: &mut i16) -> i16 {
+		*stack = 1;
+		*secondary_item = 0;
+		*secondary_stack = 1;
 		match self.id {
 			0 | 2 | 109 | 199 | 477 | 492 => 2,
 			1 => 3,
@@ -52,9 +52,7 @@ impl Tile {
 					_ => 426 + num1,
 				}
 			}
-			5 | 596 | 616 | 634 => {
-				todo!()
-			}
+			5 | 596 | 616 | 634 => unimplemented!("caller should implement this because there are multiple tile drops. source in WorldGen.cs:43272"),
 			6 => 11,
 			7 => 12,
 			8 => 13,
@@ -147,9 +145,7 @@ impl Tile {
 				_ => 149,
 			}
 			51 => 150,
-			52 | 62 | 382 => {
-				todo!()
-			}
+			52 | 62 | 382 => if random() && c.has_equipped(items::CORDAGE_GUIDE) { items::VINE_ROPE } else { 0 }
 			53 => 169,
 			54 => 170,
 			56 => 173,
@@ -160,7 +156,7 @@ impl Tile {
 				if self.id == tiles::JUNGLE_PLANTS {
 					let item = match self.frame_x {
 						144 => {
-							*drop_count = rr(2, 3);
+							*stack = rr(2, 3);
 							items::JUNGLE_SPORES
 						},
 						162 => items::NATURES_GIFT,
@@ -202,7 +198,33 @@ impl Tile {
 			80 => 276,
 			81 => 275,
 			83 | 84 => {
-				todo!()
+				let style = self.frame_x / 18;
+				let (seed, plant) = if style == 6 {
+					(items::SHIVERTHORN_SEEDS, items::SHIVERTHORN)
+				} else {
+					(items::DAYBLOOM_SEEDS + style, items::DAYBLOOM + style)
+				};
+
+				if c.has_in_hand(items::STAFF_OF_REGROWTH) || c.has_in_hand(items::ACORN_AXE) {
+					*stack = rr(1, 2);
+					*secondary_item = seed;
+					*secondary_stack = rr(1, 5);
+				} else {
+					let harvestable = self.id == 84 || match style {
+						0 => w.header.day_time,
+						1 => !w.header.day_time,
+						3 => !w.header.day_time && (w.header.blood_moon || w.header.moon_phase == 0),
+						4 => w.header.raining || w.header.cloud_bg_alpha > 0.,
+						5 => !w.header.raining && w.header.day_time && w.header.time > 40500.,
+						_ => false,
+					};
+					if harvestable {
+						*secondary_item = seed;
+						*secondary_stack = rr(1, 3);
+					}
+				}
+
+				plant
 			}
 			107 => 364,
 			108 => 365,
@@ -289,9 +311,7 @@ impl Tile {
 			168 => 701,
 			169 => 702,
 			170 => 1872,
-			171 => {
-				todo!()
-			}
+			171 => unimplemented!("caller should implement this because there are multiple tile drops. source in source in WorldGen.cs:43957"),
 			174 => 713,
 			175 => 717,
 			176 => 718,
@@ -335,16 +355,14 @@ impl Tile {
 			222 => 1105,
 			223 => 1106,
 			224 => 1103,
-			// this particular case mutates the tile so i'm passing it onto the parent caller
-			// soure code is in WorldGen.cs:44094
-			225 => tiles::HIVE,
+			225 => unimplemented!("caller should handle this because breaking this block may spawn mobs. source in WorldGen.cs:44094"),
 			226 => 1101,
 			227 => {
-				let index = self.frame_x;
-				if (8..=11).contains(&index) {
-					3385 + index - 8
+				let style = self.frame_x;
+				if (8..=11).contains(&style) {
+					items::STRANGE_PLANT_1 + style - 8
 				} else {
-					1107 + index
+					items::TEAL_MUSHROOM + style
 				}
 			}
 			229 => 1125,
@@ -406,10 +424,10 @@ impl Tile {
 			322 => 2504,
 			323 => {
 				if w.header.world_anniversary {
-					*drop_count += rr(2, 4)
+					*stack += rr(2, 4)
 				}
 				if (88..=132).contains(&self.frame_x) {
-					*secondary_drop = items::ACORN;
+					*secondary_item = items::ACORN;
 				}
 				items::PALM_WOOD
 
@@ -581,7 +599,7 @@ impl Tile {
 			563 => 4547,
 			566 => 999,
 			571 => {
-				*drop_count = rr(1, 2);
+				*stack = rr(1, 2);
 				items::BAMBOO_BLOCK
 			}
 			574 => 4717,
@@ -602,13 +620,13 @@ impl Tile {
 					_ => unreachable!(),
 				};
 				if self.frame_x >= 22 && self.frame_y >= 198 && random() {
-					*secondary_drop = self.id - 583 + items::GEM_TREE_TOPAZ_SEED;
+					*secondary_item = self.id - 583 + items::GEM_TREE_TOPAZ_SEED;
 				}
 				if random::<f64>() < 1. / 10. {
-					*drop_count = rr(1, 2);
+					*stack = rr(1, 2);
 					gem_type
 				} else {
-					3
+					items::STONE_BLOCK
 				}
 			}
 			593 => 4868,
@@ -622,30 +640,30 @@ impl Tile {
 			641 => 5306,
 			646 => 5322,
 			650 => {
-				let index = self.frame_x / 18;
-				if index < 6 {
+				let style = self.frame_x / 18;
+				if style < 6 {
 					items::STONE_BLOCK
-				} else if index < 12 {
+				} else if style < 12 {
 					items::DIRT_BLOCK
-				} else if index < 28 {
+				} else if style < 28 {
 					items::BONE
-				} else if index < 36 {
+				} else if style < 36 {
 					items::WOOD
-				} else if index < 42 {
+				} else if style < 42 {
 					items::SNOW_BLOCK
-				} else if index < 48 {
+				} else if style < 48 {
 					items::ICE_BLOCK
-				} else if index < 54 {
+				} else if style < 54 {
 					items::COBWEB
-				} else if index < 60 {
+				} else if style < 60 {
 					items::SANDSTONE
-				} else if index < 66 {
+				} else if style < 66 {
 					items::GRANITE
-				} else if index < 72 {
+				} else if style < 72 {
 					items::MARBLE
-				} else if index < 73 {
+				} else if style < 73 {
 					items::GRASS_SEEDS
-				} else if index < 77 {
+				} else if style < 77 {
 					items::SAND_BLOCK
 				} else {
 					0

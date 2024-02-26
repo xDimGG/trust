@@ -298,11 +298,11 @@ impl World {
 		let spawn_y = r.read_i32()?;
 		let world_surface = r.read_f64()?;
 		let rock_layer = r.read_f64()?;
-		let temp_time = r.read_f64()?;
-		let temp_day_time = r.read_bool()?;
-		let temp_moon_phase = r.read_i32()?;
-		let temp_blood_moon = r.read_bool()?;
-		let temp_eclipse = r.read_bool()?;
+		let time = r.read_f64()?;
+		let day_time = r.read_bool()?;
+		let moon_phase = r.read_i32()?;
+		let blood_moon = r.read_bool()?;
+		let eclipse = r.read_bool()?;
 		let dungeon_x = r.read_i32()?;
 		let dungeon_y = r.read_i32()?;
 		let has_crimson = r.read_bool()?;
@@ -340,9 +340,9 @@ impl World {
 		} else {
 			0
 		};
-		let temp_raining = r.read_bool()?;
-		let temp_rain_time = r.read_i32()?;
-		let temp_max_rain = r.read_f32()?;
+		let raining = r.read_bool()?;
+		let rain_time = r.read_i32()?;
+		let max_rain = r.read_f32()?;
 		let ore_tier_cobalt = r.read_i32()?;
 		let ore_tier_mythril = r.read_i32()?;
 		let ore_tier_adamantite = r.read_i32()?;
@@ -371,7 +371,7 @@ impl World {
 		let saved_tax_collector = version >= 129 && r.read_bool()?;
 		let saved_golfer = version >= 201 && r.read_bool()?;
 		let invasion_size_start = if version >= 107 { r.read_i32()? } else { 0 }; // TODO: mimc Main.FakeLoadInvasionStart
-		let temp_cultist_delay = if version >= 108 { r.read_i32()? } else { 86400 };
+		let cultist_delay = if version >= 108 { r.read_i32()? } else { 86400 };
 		let npc_kill_counts = if version >= 109 {
 			let mut kc = Vec::with_capacity(r.read_i16()? as usize);
 			for _ in 0..kc.capacity() {
@@ -402,10 +402,10 @@ impl World {
 		let tower_active_stardust = version >= 140 && r.read_bool()?;
 		let lunar_apocalypse_is_up = version >= 140 && r.read_bool()?;
 
-		let temp_party_manual = version >= 170 && r.read_bool()?;
-		let temp_party_genuine = version >= 170 && r.read_bool()?;
-		let temp_party_cooldown = if version >= 170 { r.read_i32()? } else { 0 };
-		let temp_party_celebrating_npcs = if version >= 170 {
+		let party_manual = version >= 170 && r.read_bool()?;
+		let party_genuine = version >= 170 && r.read_bool()?;
+		let party_cooldown = if version >= 170 { r.read_i32()? } else { 0 };
+		let party_celebrating_npcs = if version >= 170 {
 			let mut npcs = Vec::with_capacity(r.read_i32()? as usize);
 			for _ in 0..npcs.capacity() {
 				npcs.push(r.read_i32()?)
@@ -415,10 +415,10 @@ impl World {
 			vec![]
 		};
 
-		let temp_sandstorm_happening = version >= 174 && r.read_bool()?;
-		let temp_sandstorm_time_left = if version >= 174 { r.read_i32()? } else { 0 };
-		let temp_sandstorm_severity = if version >= 174 { r.read_f32()? } else { 0. };
-		let temp_sandstorm_intended_severity = if version >= 174 { r.read_f32()? } else { 0. };
+		let sandstorm_happening = version >= 174 && r.read_bool()?;
+		let sandstorm_time_left = if version >= 174 { r.read_i32()? } else { 0 };
+		let sandstorm_severity = if version >= 174 { r.read_f32()? } else { 0. };
+		let sandstorm_intended_severity = if version >= 174 { r.read_f32()? } else { 0. };
 
 		let saved_bartender = version >= 178 && r.read_bool()?;
 		let downed_dd2_invasion_t1 = version >= 178 && r.read_bool()?;
@@ -437,10 +437,10 @@ impl World {
 
 		let combat_book_was_used = version >= 204 && r.read_bool()?;
 
-		let temp_lantern_night_cooldown = if version >= 207 { r.read_i32()? } else { 0 };
-		let temp_lantern_night_genuine = version >= 207 && r.read_bool()?;
-		let temp_lantern_night_manual = version >= 207 && r.read_bool()?;
-		let temp_lantern_night_next_night_is_genuine = version >= 207 && r.read_bool()?;
+		let lantern_night_cooldown = if version >= 207 { r.read_i32()? } else { 0 };
+		let lantern_night_genuine = version >= 207 && r.read_bool()?;
+		let lantern_night_manual = version >= 207 && r.read_bool()?;
+		let lantern_night_next_night_is_genuine = version >= 207 && r.read_bool()?;
 
 		let tree_top_variations = if version >= 211 {
 			let mut npcs = Vec::with_capacity(r.read_i32()? as usize);
@@ -534,11 +534,11 @@ impl World {
 			spawn_y,
 			world_surface,
 			rock_layer,
-			temp_time,
-			temp_day_time,
-			temp_moon_phase,
-			temp_blood_moon,
-			temp_eclipse,
+			time,
+			day_time,
+			moon_phase,
+			blood_moon,
+			eclipse,
 			dungeon_x,
 			dungeon_y,
 			downed_boss_1,
@@ -570,9 +570,9 @@ impl World {
 			invasion_x,
 			slime_rain_time,
 			sundial_cooldown,
-			temp_raining,
-			temp_rain_time,
-			temp_max_rain,
+			raining,
+			rain_time,
+			max_rain,
 			ore_tier_cobalt,
 			ore_tier_mythril,
 			ore_tier_adamantite,
@@ -588,7 +588,7 @@ impl World {
 			saved_tax_collector,
 			saved_golfer,
 			invasion_size_start,
-			temp_cultist_delay,
+			cultist_delay,
 			npc_kill_counts,
 			fast_forward_time_to_dawn,
 			downed_fishron,
@@ -609,23 +609,23 @@ impl World {
 			tower_active_nebula,
 			tower_active_stardust,
 			lunar_apocalypse_is_up,
-			temp_party_manual,
-			temp_party_genuine,
-			temp_party_cooldown,
-			temp_party_celebrating_npcs,
-			temp_sandstorm_happening,
-			temp_sandstorm_time_left,
-			temp_sandstorm_severity,
-			temp_sandstorm_intended_severity,
+			party_manual,
+			party_genuine,
+			party_cooldown,
+			party_celebrating_npcs,
+			sandstorm_happening,
+			sandstorm_time_left,
+			sandstorm_severity,
+			sandstorm_intended_severity,
 			saved_bartender,
 			downed_dd2_invasion_t1,
 			downed_dd2_invasion_t2,
 			downed_dd2_invasion_t3,
 			combat_book_was_used,
-			temp_lantern_night_cooldown,
-			temp_lantern_night_genuine,
-			temp_lantern_night_manual,
-			temp_lantern_night_next_night_is_genuine,
+			lantern_night_cooldown,
+			lantern_night_genuine,
+			lantern_night_manual,
+			lantern_night_next_night_is_genuine,
 			tree_top_variations,
 			force_halloween_for_today,
 			force_xmas_for_today,

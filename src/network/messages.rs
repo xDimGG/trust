@@ -59,7 +59,7 @@ impl Sanitize for PlayerLoadout {
 	}
 }
 
-impl Sanitize for PlayerInventorySlot {
+impl Sanitize for PlayerItemSlot {
 	fn sanitize(&mut self, src: u8) {
 		self.client_id = src;
 	}
@@ -177,7 +177,7 @@ pub enum Message {
 		flags_3: u8,
 	},
 	/// 5 <->
-	PlayerInventorySlot {
+	PlayerItemSlot {
 		client_id: u8,
 		slot_id: i16,
 		amount: i16,

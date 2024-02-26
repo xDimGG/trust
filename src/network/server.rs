@@ -1,5 +1,6 @@
 use anyhow;
 use rand::random;
+use tokio::task::JoinSet;
 use std::cmp::{max, min};
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -10,11 +11,12 @@ use tokio::select;
 use tokio::sync::{broadcast, Mutex, RwLock};
 
 use crate::binary::types::{Text, Vector2};
+use crate::network::transpiled::item_slots;
 use crate::network::messages::{
 	AnglerQuest, ConnectionApprove, DropItem, KillCount, Message, NPCInfo,
-	PillarShieldStrengths, SpawnResponse, WorldTotals, Sanitize,
+	PillarShieldStrengths, SpawnResponse, WorldTotals, Sanitize, PlayerItemSlot,
 };
-use crate::network::client::{Client, ConnectionState, MAX_INVENTORY_SLOTS};
+use crate::network::client::{Client, ConnectionState, MAX_ITEM_SLOTS};
 use crate::network::utils::{
 	encode_world_header, get_section_x, get_section_y, get_sections_near,
 };
@@ -52,36 +54,42 @@ impl Server {
 
 		loop {
 			let (mut stream, addr) = listener.accept().await?;
-			let rc = arc.clone();
-			tokio::spawn(async move { rc.accept(&mut stream, addr).await });
+			let rc = Arc::clone(&arc);
+			let rc2 = Arc::clone(&arc);
+
+			tokio::spawn(async move {
+				let src = {
+					let mut clients = rc.clients.lock().await;
+					let Some(id) = clients.iter().position(Option::is_none) else {
+						Message::ConnectionRefuse(Text::Key(
+							"CLI.ServerIsFull".to_owned(),
+							vec![],
+						))
+						.write_stream(Pin::new(&mut stream))
+						.await
+						.unwrap();
+						return;
+					};
+					let world = rc.world.read().await;
+					clients[id] = Some(Client::new(
+						addr,
+						get_section_x(world.header.width as usize) + 1,
+						get_section_y(world.header.height as usize) + 1,
+					));
+					id
+				};
+
+				let _ = tokio::spawn(async move { rc.accept(&mut stream, src).await }).await;
+
+				rc2.clients.lock().await[src] = None;
+			});
 		}
 	}
 
-	async fn accept(&self, stream: &mut TcpStream, addr: SocketAddr) -> anyhow::Result<()> {
+	async fn accept(&self, stream: &mut TcpStream, src: usize) -> anyhow::Result<()> {
 		let (mut rh, mut wh) = stream.split();
 		let mut tx = self.broadcast.clone();
 		let mut rx = self.broadcast.subscribe();
-
-		// check if a player slot is available
-		let src = {
-			let mut clients = self.clients.lock().await;
-			let Some(id) = clients.iter().position(Option::is_none) else {
-				Message::ConnectionRefuse(Text::Key(
-					"CLI.ServerIsFull".to_owned(),
-					vec![],
-				))
-				.write_stream(Pin::new(&mut wh))
-				.await?;
-				return Ok(());
-			};
-			let world = self.world.read().await;
-			clients[id] = Some(Client::new(
-				addr,
-				get_section_x(world.header.width as usize) + 1,
-				get_section_y(world.header.height as usize) + 1,
-			));
-			id
-		};
 
 		loop {
 			let mut length = [0u8; 2];
@@ -247,19 +255,34 @@ impl Server {
 			Message::PlayerLoadout(mut psl) => {
 				psl.sanitize(src as u8);
 				tx.send((Message::PlayerLoadout(psl.clone()), Some(src)))?;
-				client.loadout = Some(psl);
+				// TODO: maybe handle hide_accessory. still not sure if it matters to the server
+				client.selected_loadout = psl.index;
 				vec![]
 			}
-			Message::PlayerInventorySlot(mut pis) => {
+			Message::PlayerItemSlot(mut pis) => {
 				pis.sanitize(src as u8);
+
+				let loadout_start = item_slots::LOADOUTS_START[client.selected_loadout as usize];
+				let loadout_end = item_slots::LOADOUTS_END[client.selected_loadout as usize];
 				let idx = pis.slot_id as usize;
-				if idx < MAX_INVENTORY_SLOTS {
-					tx.send((Message::PlayerInventorySlot(pis.clone()), Some(src)))?;
-					client.inventory[idx] = Some(pis);
+
+				// If the player sends their armor, copy it to their current loadout
+				if (item_slots::ARMOR_START..=item_slots::DYES_END).contains(&idx) {
+					client.items[idx - item_slots::ARMOR_START + loadout_start] = Some(pis.clone())
+				}
+
+				if idx < MAX_ITEM_SLOTS {
+					tx.send((Message::PlayerItemSlot(pis.clone()), Some(src)))?;
+
+					// Don't try to use the client's current loadout slots because it's always sent as 0
+					if !(loadout_start..=loadout_end).contains(&idx) {
+						client.items[idx] = Some(pis);
+					}
 				}
 				vec![]
 			}
 			Message::WorldRequest => {
+				// dbg!(client.items.iter().skip(60).take(4).collect::<Vec<&Option<PlayerItemSlot>>>());
 				vec![encode_world_header(&self.world.read().await.header)]
 				// todo: Main.SyncAnInvasion
 			}
@@ -280,8 +303,8 @@ impl Server {
 				// PortalHelper.SyncPortalsOnPlayerJoin(this.whoAmI, 1, dontInclude, out portalSections);
 				// sec_count += portalSections.Count;
 
-				let x_max = get_section_x(w.header.width as usize);
-				let y_max = get_section_y(w.header.height as usize);
+				let x_max = get_section_x(w.header.width as usize) - 1;
+				let y_max = get_section_y(w.header.height as usize) - 1;
 				let (xs, xe, ys, ye) =
 					get_sections_near(w.header.spawn_x, w.header.spawn_y, x_max, y_max);
 				let mut secs = c.encode_sections(&w, xs, xe, ys, ye)?;
@@ -429,7 +452,7 @@ impl Server {
 				vec![]
 			}
 			Message::UpdateTile(ppt) => {
-				dbg!(&ppt);
+				// dbg!(&ppt);
 				if ppt.action == 0 && ppt.target_type == 0 {
 					let world = self.world.read().await;
 					let tile = &world.tiles[ppt.x as usize][ppt.y as usize];
@@ -458,14 +481,19 @@ impl Server {
 				vec![]
 			}
 			Message::PlayerAction(mut pa) => {
+				if pa.selected_item != client.selected_item {
+					dbg!(client.items.iter().skip(item_slots::ARMOR_LOADOUT_0_START).take(3).collect::<Vec<&Option<PlayerItemSlot>>>());
+					dbg!(client.items.iter().skip(item_slots::ARMOR_LOADOUT_1_START).take(3).collect::<Vec<&Option<PlayerItemSlot>>>());
+					dbg!(client.items.iter().skip(item_slots::ARMOR_LOADOUT_2_START).take(3).collect::<Vec<&Option<PlayerItemSlot>>>());
+				}
 				client.selected_item = pa.selected_item;
 				pa.sanitize(src as u8);
 
 				let w = self.world.read().await;
 				let c = client;
 
-				let x_max = get_section_x(w.header.width as usize);
-				let y_max = get_section_y(w.header.height as usize);
+				let x_max = get_section_x(w.header.width as usize) - 1;
+				let y_max = get_section_y(w.header.height as usize) - 1;
 
 				let x = get_section_x((pa.position.0 / TILE) as usize);
 				let y = get_section_y((pa.position.1 / TILE) as usize);
