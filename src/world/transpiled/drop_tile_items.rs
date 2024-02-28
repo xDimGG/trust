@@ -13,7 +13,7 @@ use rand::random;
 const TRACK_TYPE: &[i16] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2];
 
 impl Tile {
-	pub fn get_dropped_item(&self, c: &Client, w: &World, stack: &mut i16, secondary_item: &mut i16, secondary_stack: &mut i16) -> i16 {
+	pub fn get_dropped_item_tile(&self, c: &Client, w: &World, stack: &mut i16, secondary_item: &mut i16, secondary_stack: &mut i16) -> i16 {
 		*stack = 1;
 		*secondary_item = 0;
 		*secondary_stack = 1;
@@ -355,7 +355,8 @@ impl Tile {
 			222 => 1105,
 			223 => 1106,
 			224 => 1103,
-			225 => unimplemented!("caller should handle this because breaking this block may spawn mobs. source in WorldGen.cs:44094"),
+			// caller should handle this because breaking this block may spawn mobs. source in WorldGen.cs:44094
+			225 => 1124,
 			226 => 1101,
 			227 => {
 				let style = self.frame_x;

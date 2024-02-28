@@ -1,8 +1,9 @@
 # Converts ID/PlayerItemSlotID.cs
+
 import os
 import sys
 import re
-from shared import pascal_to_camel, rust_header
+from shared import rust_header
 
 src = open(sys.argv[1], encoding='utf-8-sig').read()
 

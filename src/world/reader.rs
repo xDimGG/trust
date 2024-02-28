@@ -47,7 +47,7 @@ impl World {
 			return Err(WorldDecodeError::PositionCheckFailed("header".to_owned()));
 		}
 
-		let tiles = Self::read_tiles(r, &format, &header)?;
+		let tiles = Self::read_tiles(r, &header)?;
 		if r.get_cur() != format.positions[2] as usize {
 			return Err(WorldDecodeError::PositionCheckFailed("tiles".to_owned()));
 		}
@@ -664,7 +664,6 @@ impl World {
 
 	pub fn read_tiles(
 		r: &mut FileReader,
-		format: &Format,
 		header: &Header,
 	) -> Result<Vec<Vec<Tile>>, WorldDecodeError> {
 		let mut map = Vec::with_capacity(header.width as usize);
@@ -673,7 +672,7 @@ impl World {
 			let mut y = 0;
 			while y < header.height as usize {
 				// Header bytes
-				let (tile, repeat) = Tile::decode(r, format)?;
+				let (tile, repeat) = Tile::decode(r)?;
 				for _ in 0..repeat {
 					column.push(tile.clone());
 				}

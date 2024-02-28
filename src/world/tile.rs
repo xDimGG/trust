@@ -3,6 +3,8 @@ use std::io::{self, Write};
 use crate::world::binary::FileReader;
 use crate::world::types::{Format, WorldDecodeError, WALL_COUNT};
 
+use super::transpiled::tile_flags;
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum Liquid {
 	Water,
@@ -40,7 +42,7 @@ pub struct Tile {
 }
 
 impl Tile {
-	pub fn decode(r: &mut FileReader, format: &Format) -> Result<(Self, usize), WorldDecodeError> {
+	pub fn decode(r: &mut FileReader) -> Result<(Self, usize), WorldDecodeError> {
 		let h_1 = r.read_byte()?;
 		let h_2 = if h_1 & 1 == 1 { r.read_byte()? } else { 0 };
 		let h_3 = if h_2 & 1 == 1 { r.read_byte()? } else { 0 };
@@ -53,7 +55,7 @@ impl Tile {
 				r.read_byte()? as i16
 			};
 
-			let (x, y) = if format.importance[id as usize] {
+			let (x, y) = if tile_flags::FRAME[id as usize] {
 				let x = r.read_i16()?;
 				let y = r.read_i16()?;
 				(x, if id == 144 { 0 } else { y })
@@ -168,7 +170,7 @@ impl Tile {
 		Ok((tile, repeat))
 	}
 
-	pub fn encode(&self, w: &mut impl Write, repeat: usize, format: &Format) -> io::Result<()> {
+	pub fn encode(&self, w: &mut impl Write, repeat: usize) -> io::Result<()> {
 		let mut h_1 = 0;
 		let mut h_2 = 0;
 		let mut h_3 = 0;
@@ -279,7 +281,7 @@ impl Tile {
 				w.write_all(&[(self.id >> 8) as u8])?;
 			}
 
-			if format.importance[self.id as usize] {
+			if tile_flags::FRAME[self.id as usize] {
 				w.write_all(&self.frame_x.to_le_bytes())?;
 				w.write_all(&self.frame_y.to_le_bytes())?;
 			}

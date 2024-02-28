@@ -456,7 +456,7 @@ impl Server {
 				if ppt.action == 0 && ppt.target_type == 0 {
 					let world = self.world.read().await;
 					let tile = &world.tiles[ppt.x as usize][ppt.y as usize];
-					let i = tile.get_dropped_item(client, &world, &mut 0, &mut 0, &mut 0);
+					let i = tile.get_dropped_item_tile(client, &world, &mut 0, &mut 0, &mut 0);
 					if i > 0 {
 						tx.send((
 							Message::DropItem(DropItem {

@@ -1,4 +1,8 @@
-# So far, this works on ID/TileID.cs and ID/ItemID.cs
+# So far, this has been run on
+# - ID/TileID.cs
+# - ID/ItemID.cs
+# - ID/Wall.cs
+# - ID/NPCID.cs
 
 import os
 import sys

@@ -94,7 +94,7 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> io::Result<Mes
 				}
 
 				last_tile
-					.encode(&mut w, repeat_count, &world.format)
+					.encode(&mut w, repeat_count)
 					.unwrap();
 				repeat_count = 0;
 			}
@@ -137,7 +137,7 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> io::Result<Mes
 		}
 	}
 
-	last_tile.encode(&mut w, repeat_count, &world.format)?;
+	last_tile.encode(&mut w, repeat_count)?;
 
 	w.write_i16(chest_tiles.len() as i16)?;
 	for (x, y) in chest_tiles {
