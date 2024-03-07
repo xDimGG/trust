@@ -1,8 +1,6 @@
 use anyhow;
 use rand::random;
-use tokio::task::JoinSet;
 use std::cmp::{max, min};
-use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::{self, AsyncReadExt};
@@ -452,7 +450,6 @@ impl Server {
 				vec![]
 			}
 			Message::UpdateTile(ppt) => {
-				// dbg!(&ppt);
 				if ppt.action == 0 && ppt.target_type == 0 {
 					let world = self.world.read().await;
 					let tile = &world.tiles[ppt.x as usize][ppt.y as usize];

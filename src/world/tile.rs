@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 
 use crate::world::binary::FileReader;
-use crate::world::types::{Format, WorldDecodeError, WALL_COUNT};
+use crate::world::types::{WorldDecodeError, WALL_COUNT};
 
 use super::transpiled::tile_flags;
 
