@@ -6,6 +6,8 @@ use std::time::{Duration, UNIX_EPOCH};
 use std::{collections::HashSet, fs, path::Path};
 use crate::world::transpiled::tiles::*;
 
+use super::transpiled::tile_flags::SIGN;
+
 pub const EPOCH_DIFFERENCE: u64 = 719162 * 24 * 60 * 60 * 1000;
 
 impl World {
@@ -23,7 +25,6 @@ impl World {
 	}
 
 	// TODO: implement Crc32 to get seed_text value
-	// TODO: implement C# system.datetime.frombinary for parsing ticks
 
 	pub fn from_reader(r: &mut FileReader) -> Result<World, WorldDecodeError> {
 		let version = r.read_i32()?;
@@ -737,8 +738,7 @@ impl World {
 			let y = r.read_i32()?;
 
 			let t = &tiles[x as usize][y as usize];
-			// IDs from Main.tileSign; todo: automate these
-			if t.active && matches!(t.id, SIGNS | TOMBSTONES | ANNOUNCEMENT_BOX | TATTERED_WOOD_SIGN) {
+			if t.active && SIGN[t.id as usize] {
 				signs.push(Sign { x, y, text })
 			}
 		}

@@ -4,6 +4,7 @@ use std::io::{self, BufWriter};
 use crate::binary::writer::Writer;
 use crate::network::messages::{Message, WorldHeader};
 use crate::world::tile::Tile;
+use crate::world::transpiled::tile_flags::ALLOWS_SAVE_COMPRESSION_BATCHING;
 use crate::world::types::{Header, World};
 use flate2::write::ZlibEncoder;
 use flate2::{Compress, Compression};
@@ -64,7 +65,7 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> io::Result<Mes
 	let x_end = x_start + SECTION_WIDTH;
 	let y_end = y_start + SECTION_HEIGHT;
 
-	// todo: optimize this to reduce data copying
+	// todo: use a buffer pool
 
 	let out = ZlibEncoder::new_with_compress(vec![], Compress::new(Compression::default(), false));
 	let bw = BufWriter::new(out);
@@ -87,8 +88,7 @@ pub fn encode_tiles(world: &World, sec_x: usize, sec_y: usize) -> io::Result<Mes
 
 			if !(x == x_start && y == y_start) {
 				// todo: ensure isTheSameAs is like PartialEq
-				// todo: automate this to use TileID.Sets.AllowsSaveCompressionBatching
-				if tile == last_tile && tile.id != 423 && tile.id != 520 {
+				if tile == last_tile && ALLOWS_SAVE_COMPRESSION_BATCHING[tile.id as usize] {
 					repeat_count += 1;
 					continue;
 				}

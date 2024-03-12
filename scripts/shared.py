@@ -15,7 +15,7 @@ Language.build_library(so_file, [gh_repo])
 parser = Parser()
 parser.set_language(Language(so_file, 'c_sharp'))
 
-def pascal_to_camel(name, upper=False):
+def pascal_to_camel(name, upper=True):
 	name = '_'.join(re.findall(r'[A-Z0-9]+[a-z]*?(?=[A-Z0-9]|$)', name))
 	return name.upper() if upper else name.lower()
 

@@ -25,7 +25,7 @@ for name, id in re.findall(r'public const u?short (\w+) = (-?\d+);', src):
 	if items_file and 'of' in name and all(x not in name for x in ['Sofa', 'Coffin', 'proof', 'Coffee']):
 		name = name.replace('of', 'Of')
 	# Convert name to snake case
-	name = pascal_to_camel(name, True)
+	name = pascal_to_camel(name)
 
 	rust += f'pub const {name}: i16 = {id};\n'
 

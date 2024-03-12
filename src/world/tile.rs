@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use crate::world::binary::FileReader;
 use crate::world::types::{WorldDecodeError, WALL_COUNT};
 
-use super::transpiled::tile_flags;
+use super::transpiled::tile_flags::{self, NON_SOLID_SAVE_SLOPES, SOLID};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum Liquid {
@@ -104,8 +104,7 @@ impl Tile {
 
 		let (wire_1, wire_2, wire_3, half_brick, slope) = if h_2 > 1 {
 			let n_9 = (h_2 & 0b1110000) >> 4;
-			// todo: add check for Main.tileSolid[(int) tile.type] || TileID.Sets.NonSolidSaveSlopes[(int) tile.type])
-			let (hb, sl) = if n_9 != 0 {
+			let (hb, sl) = if n_9 != 0 && (SOLID[id as usize] || NON_SOLID_SAVE_SLOPES[id as usize]) {
 				(n_9 == 1, n_9 - 1)
 			} else {
 				(false, 0)
