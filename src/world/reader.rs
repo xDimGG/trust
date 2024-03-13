@@ -4,7 +4,6 @@ use crate::world::tile::*;
 use crate::world::types::*;
 use std::time::{Duration, UNIX_EPOCH};
 use std::{collections::HashSet, fs, path::Path};
-use crate::world::transpiled::tiles::*;
 
 use super::transpiled::tile_flags::SIGN;
 
